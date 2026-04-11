@@ -31,12 +31,14 @@ Modern PHP has evolved into a mature, type-safe language, yet many Laravel proje
 - **Just Better Laravel Defaults**: Thanks to **[Essentials](https://github.com/nunomaduro/essentials)** / strict models, auto eager loading, immutable dates, and more...
 - **AI Guidelines**: Integrated AI Guidelines to assist in maintaining code quality and consistency
 - **Full Testing Suite**: More than 150 tests with 100% code coverage using Pest
-- 
+
 This isn't just another Laravel boilerplate—it's a statement that PHP applications can and should be built with the same rigor as strongly-typed languages like Rust or TypeScript.
 
 ## Getting Started
 
-> **Requires [PHP 8.5+](https://php.net/releases/) and a code coverage driver like [xdebug](https://xdebug.org/docs/install)**.
+> **Requires [Docker](https://docs.docker.com/get-docker/)** for [Laravel Sail](https://laravel.com/docs/sail). The application runs in containers; use `./vendor/bin/sail` (or a shell alias to `sail`) so Composer, Artisan, and Bun run inside the `laravel.test` service.
+
+> **Testing with coverage** expects a coverage driver such as [Xdebug](https://xdebug.org/docs/install). Sail sets `XDEBUG_MODE` via environment variables; see `compose.yaml` and Sail documentation.
 
 Create your type-safe Laravel application using [Composer](https://getcomposer.org):
 
@@ -46,25 +48,33 @@ composer create-project nunomaduro/laravel-starter-kit-inertia-react --prefer-di
 
 ### Initial Setup
 
-Navigate to your project and complete the setup:
+Navigate to your project, start Sail, then run setup and dev commands **through Sail**:
 
 ```bash
 cd example-app
 
-# Setup the project
-composer setup
+# Start containers (builds the image on first run)
+./vendor/bin/sail up -d
 
-# Start the development server
-composer dev
+# Install PHP deps, env, migrations, frontend deps, and production asset build
+./vendor/bin/sail composer setup
+
+# Start Laravel, queue, logs, and Vite concurrently
+./vendor/bin/sail composer dev
 ```
 
 ### Optional: Browser Testing Setup
 
-If you plan to use Pest's browser testing capabilities:
+Pest browser tests use Playwright. The `playwright` package is already a dev dependency; download the browser binaries **inside Sail** so they match the container’s Linux environment:
 
 ```bash
-bun add playwright
-bunx playwright install
+./vendor/bin/sail bunx playwright install
+```
+
+To install only Chromium (smaller download):
+
+```bash
+./vendor/bin/sail bunx playwright install chromium
 ```
 
 ### Verify Installation
@@ -72,28 +82,30 @@ bunx playwright install
 Run the test suite to ensure everything is configured correctly:
 
 ```bash
-composer test
+./vendor/bin/sail composer test
 ```
 
 You should see 100% test coverage and all quality checks passing.
 
 ## Available Tooling
 
+All `composer` and `bun` workflows below are intended to run **via Sail** (prefix with `./vendor/bin/sail`).
+
 ### Development
-- `composer dev` - Starts Laravel server, queue worker, log monitoring, and Vite+ dev server concurrently
+- `./vendor/bin/sail composer dev` - Starts Laravel server, queue worker, log monitoring, and Vite+ dev server concurrently
 
 ### Code Quality
-- `composer lint` - Runs Rector (refactoring), Pint (PHP formatting), and Oxfmt (JS/TS formatting)
-- `composer test:lint` - Dry-run mode for CI/CD pipelines
+- `./vendor/bin/sail composer lint` - Runs Rector (refactoring), Pint (PHP formatting), and Oxfmt (JS/TS formatting)
+- `./vendor/bin/sail composer test:lint` - Dry-run mode for CI/CD pipelines
 
 ### Testing
-- `composer test:type-coverage` - Ensures 100% type coverage with Pest
-- `composer test:types` - Runs PHPStan at level 9 (maximum strictness)
-- `composer test:unit` - Runs Pest tests with 100% code coverage requirement
-- `composer test` - Runs the complete test suite (type coverage, unit tests, linting, static analysis)
+- `./vendor/bin/sail composer test:type-coverage` - Ensures 100% type coverage with Pest
+- `./vendor/bin/sail composer test:types` - Runs PHPStan at level 9 (maximum strictness)
+- `./vendor/bin/sail composer test:unit` - Runs Pest tests with 100% code coverage requirement
+- `./vendor/bin/sail composer test` - Runs the complete test suite (type coverage, unit tests, linting, static analysis)
 
 ### Maintenance
-- `composer update:requirements` - Updates all PHP and Bun dependencies to latest versions
+- `./vendor/bin/sail composer update:requirements` - Updates all PHP and Bun dependencies to latest versions
 
 ## License
 
