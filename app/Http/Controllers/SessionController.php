@@ -33,7 +33,7 @@ final readonly class SessionController
         // Create credentials object
         $credentials = new PrssLoginR01Dto(
             credentialId: (string) $email,
-            credentialType: (string) $credentialType,
+            credentialType: (string) 'EML',
             password: (string) $password,
         );
 
