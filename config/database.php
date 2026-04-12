@@ -116,6 +116,22 @@ return [
             // 'trust_server_certificate' => env('DB_TRUST_SERVER_CERTIFICATE', 'false'),
         ],
 
+        'sau' => [
+            'driver' => 'sybasease',
+            'host' => env('DB_HOST_SYBASE', 'localhost'),
+            'port' => env('DB_PORT_SYBASE', '5500'),
+            'database' => env('DB_DATABASE_SYBASE', 'forge'),
+            'username' => env('DB_USERNAME_SYBASE', 'forge'),
+            'password' => env('DB_PASSWORD_SYBASE', ''),
+            'charset' => 'utf8',
+            'prefix' => '',
+            'cache_tables' => false,
+            'cache_time' => 3600,
+            'application_encoding' => false,
+            'application_charset' => '',
+            'schema' => 'public',
+        ],
+
     ],
 
     /*
