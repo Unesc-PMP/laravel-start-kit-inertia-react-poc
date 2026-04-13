@@ -1,0 +1,9 @@
+---
+description: Comandos PHP/Composer via Laravel Sail
+alwaysApply: true
+---
+
+# Laravel Sail
+
+- O ambiente de desenvolvimento usa **Laravel Sail** (Docker). Para Composer, Artisan, Pest, Pint e PHP no contexto da app, prefira **`./vendor/bin/sail`** com os contentores a correr (ex.: `./vendor/bin/sail composer install`, `./vendor/bin/sail artisan migrate`, `./vendor/bin/sail test`, `./vendor/bin/sail pint`).
+- Não assumir que `php` ou `composer` no host substituem o Sail para instalar dependências ou correr a aplicação alinhada ao projeto.
