@@ -13,12 +13,15 @@
     "mcp": true,
     "nightwatch_mcp": false,
     "packages": [
-        "laravel/fortify"
+        "barryvdh/laravel-debugbar"
     ],
     "sail": false,
     "skills": [
+        "fortify-development",
         "laravel-best-practices",
         "wayfinder-development",
-        "fortify-development"
+        "inertia-react-development",
+        "tailwindcss-development",
+        "debug-using-debugbar"
     ]
 }

@@ -31,6 +31,7 @@
         "nunomaduro/essentials": "^1.2.0"
     },
     "require-dev": {
+        "barryvdh/laravel-debugbar": "^4.2",
         "driftingly/rector-laravel": "^2.3.0",
         "fakerphp/faker": "^1.24.1",
         "larastan/larastan": "^3.9.3",
