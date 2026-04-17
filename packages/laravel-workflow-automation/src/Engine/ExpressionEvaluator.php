@@ -77,7 +77,9 @@ final class ExpressionEvaluator implements ExpressionEvaluatorInterface
     {
         $this->expression = mb_trim($expression);
         $this->pos = 0;
-        $this->length = mb_strlen($this->expression);
+        // Byte length: $this->pos is advanced per byte (e.g. $this->expression[$this->pos]); using
+        // mb_strlen here breaks UTF-8 inside string literals (e.g. "Não") and ternary branches.
+        $this->length = strlen($this->expression);
 
         $result = $this->parseTernary($variables);
 
@@ -551,7 +553,7 @@ final class ExpressionEvaluator implements ExpressionEvaluatorInterface
 
     private function defaultFunctions(): array
     {
-        $strict = config('workflow-automation.expression_mode', 'safe') === 'strict';
+        $strict = $this->isExpressionModeStrict();
 
         if ($strict) {
             return [];
@@ -613,5 +615,14 @@ final class ExpressionEvaluator implements ExpressionEvaluatorInterface
             'json_encode' => fn (mixed $v): string => json_encode($v),
             'json_decode' => fn (string $v): mixed => json_decode($v, true),
         ];
+    }
+
+    private function isExpressionModeStrict(): bool
+    {
+        try {
+            return config('workflow-automation.expression_mode', 'safe') === 'strict';
+        } catch (\Throwable) {
+            return false;
+        }
     }
 }

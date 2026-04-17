@@ -54,6 +54,12 @@ it('parses string literals', function () {
     expect($this->evaluator->evaluate('"world"', []))->toBe('world');
 });
 
+it('parses UTF-8 string literals and ternary branches', function () {
+    expect($this->evaluator->evaluate('"Não"', []))->toBe('Não');
+    expect($this->evaluator->evaluate('x ? "Sim" : "Não"', ['x' => true]))->toBe('Sim');
+    expect($this->evaluator->evaluate('x ? "Sim" : "Não"', ['x' => false]))->toBe('Não');
+});
+
 it('parses boolean literals', function () {
     expect($this->evaluator->evaluate('true', []))->toBeTrue();
     expect($this->evaluator->evaluate('false', []))->toBeFalse();

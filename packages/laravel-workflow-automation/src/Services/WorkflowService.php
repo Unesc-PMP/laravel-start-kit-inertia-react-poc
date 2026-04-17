@@ -14,7 +14,9 @@ use Aftandilmmd\WorkflowAutomation\Jobs\ExecuteWorkflowJob;
 use Aftandilmmd\WorkflowAutomation\Models\Workflow;
 use Aftandilmmd\WorkflowAutomation\Models\WorkflowEdge;
 use Aftandilmmd\WorkflowAutomation\Models\WorkflowNode;
+use Aftandilmmd\WorkflowAutomation\Models\WorkflowNodeRun;
 use Aftandilmmd\WorkflowAutomation\Models\WorkflowRun;
+use Illuminate\Support\Facades\DB;
 
 final class WorkflowService
 {
@@ -57,12 +59,28 @@ final class WorkflowService
         // Find the waiting node run that holds this resume token
         $nodeRun = $run->nodeRuns()
             ->where('status', 'completed')
-            ->whereJsonContains('output->resume->0->resume_token', $resumeToken)
-            ->first();
+            ->get()
+            ->first(static function (WorkflowNodeRun $nr) use ($resumeToken): bool {
+                $output = $nr->output ?? [];
+
+                if (($output['resume'][0]['resume_token'] ?? null) === $resumeToken) {
+                    return true;
+                }
+
+                return ($output['main'][0]['resume_token'] ?? null) === $resumeToken;
+            });
 
         $resumeNodeId = $nodeRun?->node_id ?? 0;
 
-        return $this->executor->resume($run, $resumeNodeId, $payload);
+        $resumePort = 'resume';
+        if ($nodeRun !== null) {
+            $output = $nodeRun->output ?? [];
+            if (isset($output['main'][0]['resume_token']) && $output['main'][0]['resume_token'] === $resumeToken) {
+                $resumePort = 'main';
+            }
+        }
+
+        return $this->executor->resume($run, $resumeNodeId, $payload, $resumePort);
     }
 
     /**
@@ -168,7 +186,14 @@ final class WorkflowService
     public function delete(int|Workflow $workflow): void
     {
         $workflow = $this->resolveWorkflow($workflow);
-        $workflow->delete();
+
+        DB::transaction(function () use ($workflow): void {
+            $workflow->edges()->delete();
+            $workflow->runs()->delete();
+            $workflow->nodes()->delete();
+            $workflow->tags()->detach();
+            $workflow->forceDelete();
+        });
     }
 
     public function duplicate(int|Workflow $workflow): Workflow

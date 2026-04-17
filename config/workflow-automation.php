@@ -150,7 +150,7 @@ return [
 
     'node_discovery' => [
         'app_paths' => [
-            // app_path('Workflow/Nodes'),
+            app_path('Workflow/Nodes'),
         ],
     ],
 

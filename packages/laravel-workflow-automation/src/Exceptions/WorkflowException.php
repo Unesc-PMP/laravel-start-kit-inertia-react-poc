@@ -6,4 +6,4 @@ namespace Aftandilmmd\WorkflowAutomation\Exceptions;
 
 use RuntimeException;
 
-final class WorkflowException extends RuntimeException {}
+class WorkflowException extends RuntimeException {}

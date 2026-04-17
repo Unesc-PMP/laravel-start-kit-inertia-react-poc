@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace Aftandilmmd\WorkflowAutomation\Exceptions;
 
-final class WorkflowValidationException extends WorkflowException
+use RuntimeException;
+
+/** Thrown when a workflow graph fails structural validation. */
+final class WorkflowValidationException extends RuntimeException
 {
     /**
      * @param  array<int, string>  $errors  List of validation error messages.

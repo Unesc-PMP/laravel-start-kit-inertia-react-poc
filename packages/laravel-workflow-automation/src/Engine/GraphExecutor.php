@@ -115,6 +115,12 @@ final class GraphExecutor
 
             $this->processQueue($queue, $nodes, $edges, $edgeMap, $context, $run);
 
+            if ($run->fresh()->status === RunStatus::Waiting) {
+                $run->update(['context' => $context->getAllOutputs()]);
+
+                return $run->fresh();
+            }
+
             $run->update([
                 'status' => RunStatus::Completed,
                 'context' => $context->getAllOutputs(),
