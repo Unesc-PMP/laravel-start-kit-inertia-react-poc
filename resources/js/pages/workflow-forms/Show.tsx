@@ -3,13 +3,15 @@ import {
     ArrowRight,
     ArrowRightLeft,
     Check,
+    Clock,
     FilePenLine,
     GraduationCap,
     ScrollText,
     type LucideIcon,
 } from 'lucide-react';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import InputError from '@/components/input-error';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -17,6 +19,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { Spinner } from '@/components/ui/spinner';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import AppLayout from '@/layouts/app-layout';
 import { dashboard } from '@/routes';
 import { show as workflowFormShow, submit as workflowFormSubmit } from '@/routes/workflow-forms';
@@ -61,12 +64,18 @@ type ProgressStep = {
     state: 'completed' | 'current' | 'pending';
     completed_at: string | null;
     summary_lines: string[];
+    description?: string | null;
+    actor_name?: string | null;
 };
 
 type ProgressPayload = {
     workflow_name: string;
+    workflow_description?: string | null;
     steps: ProgressStep[];
 };
+
+type TimelineHeadingRow = { type: 'heading'; title: string; reactKey: string };
+type TimelineStepRow = { type: 'step'; step: ProgressStep; displayIndex: number; reactKey: string };
 
 type Props = {
     token: string;
@@ -163,15 +172,138 @@ function formatWhen(iso: string | null): string {
     }
 }
 
+function formatTimeOnly(iso: string | null): string {
+    if (!iso) {
+        return '—';
+    }
+    try {
+        return new Intl.DateTimeFormat('pt-PT', {
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false,
+        }).format(new Date(iso));
+    } catch {
+        return '—';
+    }
+}
+
+function formatShortDate(iso: string | null): string {
+    if (!iso) {
+        return '';
+    }
+    try {
+        return new Intl.DateTimeFormat('pt-PT', {
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric',
+        }).format(new Date(iso));
+    } catch {
+        return '';
+    }
+}
+
+/** Cabeçalho de grupo estilo agenda (ex.: seg., 17 de abr.) */
+function formatDateGroupHeading(iso: string): string {
+    try {
+        return new Intl.DateTimeFormat('pt-PT', {
+            weekday: 'short',
+            day: 'numeric',
+            month: 'short',
+        }).format(new Date(iso));
+    } catch {
+        return formatShortDate(iso);
+    }
+}
+
+function calendarDayKey(iso: string): string {
+    const d = new Date(iso);
+
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function stepSectionKey(s: ProgressStep): string {
+    if (s.state === 'pending') {
+        return '__pending__';
+    }
+    if (s.state === 'current') {
+        return '__current__';
+    }
+    if (s.completed_at) {
+        return `day:${calendarDayKey(s.completed_at)}`;
+    }
+
+    return '__other__';
+}
+
+function stepSectionTitle(key: string, sampleIso: string | null): string {
+    if (key === '__pending__') {
+        return 'Pendentes';
+    }
+    if (key === '__current__') {
+        return 'Em curso';
+    }
+    if (key === '__other__') {
+        return 'Etapas';
+    }
+    if (key.startsWith('day:') && sampleIso) {
+        return formatDateGroupHeading(sampleIso);
+    }
+
+    return 'Etapas';
+}
+
+function initialsFromLabel(label: string): string {
+    const compact = label.replace(/[^\p{L}\d]/gu, '').slice(0, 2);
+    if (compact.length >= 2) {
+        return compact.toUpperCase();
+    }
+
+    return label
+        .split(/\s+/)
+        .filter(Boolean)
+        .map((w) => w[0])
+        .join('')
+        .slice(0, 2)
+        .toUpperCase() || '—';
+}
+
 function stateBadge(state: ProgressStep['state']): { label: string; variant: 'default' | 'secondary' | 'outline' } {
     if (state === 'completed') {
-        return { label: 'Concluída', variant: 'secondary' };
+        return { label: 'Concluída', variant: 'outline' };
     }
     if (state === 'current') {
         return { label: 'Em curso', variant: 'default' };
     }
 
     return { label: 'Pendente', variant: 'outline' };
+}
+
+function stepStatusDotClass(state: ProgressStep['state']): string {
+    if (state === 'completed') {
+        return 'bg-emerald-500';
+    }
+    if (state === 'current') {
+        return 'bg-sky-500';
+    }
+
+    return 'bg-amber-500';
+}
+
+function stepPrimaryDescription(s: ProgressStep): string | null {
+    const d = s.description?.trim();
+    if (s.state === 'pending') {
+        return d || 'Esta etapa será executada depois de concluir as etapas anteriores.';
+    }
+
+    return d || null;
+}
+
+function stepSecondaryHint(s: ProgressStep): string | null {
+    if (s.state === 'current') {
+        return 'Preencha o formulário à esquerda e utilize o botão de envio para avançar.';
+    }
+
+    return null;
 }
 
 function FormStepsSegmentBar({ progress, step }: { progress: ProgressPayload; step: Step }) {
@@ -285,61 +417,261 @@ function ProgressPanel({
     progress: ProgressPayload;
     run_id: number;
 }) {
+    const [scope, setScope] = useState<'all' | 'forms'>('all');
+
+    const formStepCount = useMemo(
+        () => progress.steps.filter((s) => s.node_key === 'form_step').length,
+        [progress.steps],
+    );
+
+    const showStepFilter = useMemo(
+        () => formStepCount > 0 && progress.steps.some((s) => s.node_key !== 'form_step'),
+        [formStepCount, progress.steps],
+    );
+
+    const displayedSteps = useMemo(() => {
+        if (scope === 'forms') {
+            return progress.steps.filter((s) => s.node_key === 'form_step');
+        }
+
+        return progress.steps;
+    }, [progress.steps, scope]);
+
+    const timelineRows = useMemo((): (TimelineHeadingRow | TimelineStepRow)[] => {
+        const out: (TimelineHeadingRow | TimelineStepRow)[] = [];
+        let prevSectionKey: string | null = null;
+
+        displayedSteps.forEach((step, index) => {
+            const sectionKey = stepSectionKey(step);
+            if (sectionKey !== prevSectionKey) {
+                out.push({
+                    type: 'heading',
+                    title: stepSectionTitle(sectionKey, step.completed_at),
+                    reactKey: `heading-${sectionKey}-${index}`,
+                });
+                prevSectionKey = sectionKey;
+            }
+            out.push({
+                type: 'step',
+                step,
+                displayIndex: index + 1,
+                reactKey: `step-${step.node_id}`,
+            });
+        });
+
+        return out;
+    }, [displayedSteps]);
+
+    const stepOnlyRows = useMemo(
+        () => timelineRows.filter((r): r is TimelineStepRow => r.type === 'step'),
+        [timelineRows],
+    );
+
     return (
         <aside
             className={cn(
-                'border-border bg-muted/30 flex min-h-0 w-full shrink-0 flex-col border-t lg:w-[min(26rem,38vw)] lg:max-w-md lg:border-t-0 lg:border-l',
+                'border-border bg-background flex min-h-0 w-full shrink-0 flex-col border-t lg:w-[min(28rem,40vw)] lg:max-w-md lg:border-t-0 lg:border-l',
             )}
             aria-labelledby="workflow-progress-heading"
         >
-            <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-y-auto p-4 lg:p-5">
-                <div>
-                    <h2 id="workflow-progress-heading" className="text-lg font-semibold tracking-tight">
-                        Andamento do processo
-                    </h2>
-                    <p className="text-muted-foreground mt-1 text-sm leading-snug">{progress.workflow_name}</p>
-                    <p className="text-muted-foreground mt-2 text-xs">
-                        Execução #{run_id} — etapas e dados já enviados (quando aplicável).
+            <div className="scrollbar-discrete flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-y-auto p-4 lg:p-5">
+                <header className="space-y-1">
+                    <p className="text-muted-foreground font-mono text-[11px] font-medium tracking-wide uppercase">
+                        Execução #{run_id}
                     </p>
-                </div>
+                    <h2 id="workflow-progress-heading" className="text-lg font-semibold tracking-tight">
+                        Andamento
+                    </h2>
+                    <p className="text-muted-foreground text-sm leading-snug">{progress.workflow_name}</p>
+                    {progress.workflow_description ? (
+                        <p className="text-muted-foreground pt-0.5 text-xs leading-relaxed whitespace-pre-wrap">
+                            {progress.workflow_description}
+                        </p>
+                    ) : null}
+                </header>
+
+                {showStepFilter ? (
+                    <ToggleGroup
+                        type="single"
+                        value={scope}
+                        onValueChange={(v) => {
+                            if (v === 'all' || v === 'forms') {
+                                setScope(v);
+                            }
+                        }}
+                        variant="outline"
+                        size="sm"
+                        className="grid w-full grid-cols-2 gap-0 shadow-none"
+                    >
+                        <ToggleGroupItem value="all" className="text-xs">
+                            Todas as etapas
+                        </ToggleGroupItem>
+                        <ToggleGroupItem value="forms" className="text-xs">
+                            Só formulários
+                        </ToggleGroupItem>
+                    </ToggleGroup>
+                ) : null}
+
                 <Separator />
-                <ol className="flex flex-col gap-4 pb-2">
-                    {progress.steps.map((s, idx) => {
+
+                <div className="flex flex-col pb-2" role="list">
+                    {timelineRows.map((row, rowIdx) => {
+                        if (row.type === 'heading') {
+                            return (
+                                <div
+                                    key={row.reactKey}
+                                    className={cn(
+                                        'text-muted-foreground pb-2 text-xs font-medium tracking-wide',
+                                        rowIdx > 0 && 'pt-8',
+                                    )}
+                                >
+                                    {row.title}
+                                </div>
+                            );
+                        }
+
+                        const s = row.step;
                         const b = stateBadge(s.state);
+                        const stepNo = String(row.displayIndex).padStart(2, '0');
+                        const totalShown = String(displayedSteps.length).padStart(2, '0');
+                        const stepIndexAmongSteps = stepOnlyRows.findIndex((r) => r.step.node_id === s.node_id);
+                        const isLastStep =
+                            stepIndexAmongSteps >= 0 && stepIndexAmongSteps === stepOnlyRows.length - 1;
 
                         return (
-                            <li key={s.node_id}>
-                                <div className="flex flex-wrap items-center gap-2">
-                                    <span className="text-muted-foreground font-mono text-xs">
-                                        {idx + 1}/{progress.steps.length}
-                                    </span>
-                                    <Badge variant={b.variant}>{b.label}</Badge>
+                            <div key={row.reactKey} className="flex items-stretch gap-0" role="listitem">
+                                <div className="text-muted-foreground w-[4.5rem] shrink-0 pt-0.5 text-right font-mono tabular-nums">
+                                    {s.state === 'completed' && s.completed_at ? (
+                                        <>
+                                            <p className="text-foreground text-base font-semibold leading-none tracking-tight">
+                                                {formatTimeOnly(s.completed_at)}
+                                            </p>
+                                            <p className="mt-1 text-xs leading-none opacity-80">
+                                                {formatShortDate(s.completed_at)}
+                                            </p>
+                                            <p className="mt-2 flex items-center justify-end gap-1 text-[10px] leading-none opacity-80">
+                                                <Clock className="size-3 shrink-0 opacity-70" aria-hidden />
+                                                <span>
+                                                    Etapa {stepNo}/{totalShown}
+                                                </span>
+                                            </p>
+                                        </>
+                                    ) : null}
+                                    {s.state === 'current' ? (
+                                        <>
+                                            <p className="text-foreground text-base font-semibold leading-none">•</p>
+                                            <p className="mt-1 text-xs leading-none opacity-80">Agora</p>
+                                            <p className="mt-2 flex items-center justify-end gap-1 text-[10px] leading-none opacity-80">
+                                                <Clock className="size-3 shrink-0 opacity-70" aria-hidden />
+                                                <span>
+                                                    Etapa {stepNo}/{totalShown}
+                                                </span>
+                                            </p>
+                                        </>
+                                    ) : null}
+                                    {s.state === 'pending' ? (
+                                        <>
+                                            <p className="text-foreground text-base font-semibold leading-none tracking-tight opacity-35">
+                                                —
+                                            </p>
+                                            <p className="mt-1 text-xs leading-none opacity-70">A seguir</p>
+                                            <p className="mt-2 flex items-center justify-end gap-1 text-[10px] leading-none opacity-80">
+                                                <Clock className="size-3 shrink-0 opacity-70" aria-hidden />
+                                                <span>
+                                                    Etapa {stepNo}/{totalShown}
+                                                </span>
+                                            </p>
+                                        </>
+                                    ) : null}
                                 </div>
-                                <p className="mt-1 font-medium">{s.label}</p>
-                                {s.completed_at ? (
-                                    <p className="text-muted-foreground text-xs">
-                                        Concluída em {formatWhen(s.completed_at)}
-                                    </p>
-                                ) : null}
-                                {s.state === 'current' ? (
-                                    <p className="text-muted-foreground mt-1 text-xs">
-                                        É nesta etapa que se encontra — preencha o formulário e avance.
-                                    </p>
-                                ) : null}
-                                {s.summary_lines.length > 0 ? (
-                                    <ul className="border-border bg-background/80 mt-2 rounded-md border px-3 py-2 text-xs">
-                                        {s.summary_lines.map((line, li) => (
-                                            <li key={li} className="py-0.5">
-                                                {line}
-                                            </li>
-                                        ))}
-                                    </ul>
-                                ) : null}
-                                {idx < progress.steps.length - 1 ? <Separator className="mt-4" /> : null}
-                            </li>
+
+                                <div className="relative flex w-6 shrink-0 flex-col items-center self-stretch pt-1">
+                                    {!isLastStep ? (
+                                        <div
+                                            className="bg-border absolute top-[13px] bottom-0 left-1/2 w-px -translate-x-1/2"
+                                            aria-hidden
+                                        />
+                                    ) : null}
+                                    <span
+                                        className={cn(
+                                            'border-background relative z-[1] size-2.5 shrink-0 rounded-full border-2',
+                                            stepStatusDotClass(s.state),
+                                        )}
+                                        title={b.label}
+                                    />
+                                </div>
+
+                                <div className={cn('min-w-0 flex-1 space-y-2', !isLastStep && 'pb-10')}>
+                                    <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1">
+                                        <p className="text-foreground font-semibold leading-snug">{s.label}</p>
+                                        <Badge
+                                            variant={b.variant}
+                                            className={cn(
+                                                'shrink-0 rounded-full px-2.5 py-0 text-[10px] font-medium uppercase',
+                                                s.state === 'completed' &&
+                                                    'border-emerald-500/40 bg-emerald-500/12 text-emerald-900 dark:border-emerald-400/35 dark:bg-emerald-500/15 dark:text-emerald-100',
+                                                s.state === 'pending' &&
+                                                    'border-amber-200/80 bg-amber-50 text-amber-950 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-100',
+                                            )}
+                                        >
+                                            {b.label}
+                                        </Badge>
+                                    </div>
+
+                                    {(() => {
+                                        const primary = stepPrimaryDescription(s);
+                                        const hint = stepSecondaryHint(s);
+                                        if (!primary && !hint) {
+                                            return null;
+                                        }
+
+                                        return (
+                                            <div className="text-muted-foreground text-xs leading-relaxed">
+                                                <p className="flex items-start gap-1.5">
+                                                    <ScrollText
+                                                        className="text-muted-foreground/70 mt-0.5 size-3.5 shrink-0"
+                                                        aria-hidden
+                                                    />
+                                                    <span className="min-w-0 space-y-2">
+                                                        {primary ? (
+                                                            <span className="block whitespace-pre-wrap">{primary}</span>
+                                                        ) : null}
+                                                        {hint ? (
+                                                            <span className="block whitespace-pre-wrap">{hint}</span>
+                                                        ) : null}
+                                                    </span>
+                                                </p>
+                                            </div>
+                                        );
+                                    })()}
+
+                                    {s.summary_lines.length > 0 ? (
+                                        <ul className="text-muted-foreground space-y-1 text-xs leading-relaxed">
+                                            {s.summary_lines.map((line, li) => (
+                                                <li key={li}>{line}</li>
+                                            ))}
+                                        </ul>
+                                    ) : null}
+
+                                    <div className="flex min-w-0 items-center gap-2.5 pt-2">
+                                        <Avatar className="size-7 shrink-0 border-0 shadow-none">
+                                            <AvatarFallback className="bg-muted/50 text-[10px] font-semibold text-muted-foreground">
+                                                {initialsFromLabel(s.actor_name?.trim() || s.label)}
+                                            </AvatarFallback>
+                                        </Avatar>
+                                        {s.actor_name?.trim() ? (
+                                            <div className="min-w-0 flex-1">
+                                                <p className="text-muted-foreground truncate text-[10px] leading-none font-normal">
+                                                    {s.actor_name.trim()}
+                                                </p>
+                                            </div>
+                                        ) : null}
+                                    </div>
+                                </div>
+                            </div>
                         );
                     })}
-                </ol>
+                </div>
             </div>
         </aside>
     );
@@ -365,7 +697,7 @@ function WorkflowFormShowInner({ token, step, run_id, prefill, previous_token, p
         <AppLayout breadcrumbs={breadcrumbs}>
             <Head title={step.title} />
             <div className="flex min-h-0 flex-1 flex-col lg:max-h-[calc(100svh-4rem-var(--impersonation-banner-offset,0px))] lg:flex-row">
-                <div className="flex min-h-0 min-w-0 w-full flex-1 flex-col overflow-y-auto p-4 lg:px-8 lg:py-6">
+                <div className="scrollbar-discrete flex min-h-0 min-w-0 w-full flex-1 flex-col overflow-y-auto p-4 lg:px-8 lg:py-6">
                     <div className="w-full max-w-none space-y-6">
                         <FormStepsSegmentBar progress={progress} step={step} />
                         <div>
