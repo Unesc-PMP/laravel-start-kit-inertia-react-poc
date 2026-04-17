@@ -45,6 +45,7 @@ final class HandleInertiaRequests extends Middleware
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
             'impersonating' => $isImpersonating,
             'impersonator' => $isImpersonating ? $impersonate->getImpersonator() : null,
+            'matricula_error' => fn (): ?string => $request->session()->pull('matricula_error'),
         ];
     }
 }

@@ -6,4 +6,5 @@ export type SharedData = {
     sidebarOpen: boolean;
     impersonating: boolean;
     impersonator: User | null;
+    matricula_error?: string | null;
 };
