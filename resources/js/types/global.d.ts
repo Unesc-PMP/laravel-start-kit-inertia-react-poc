@@ -15,6 +15,8 @@ declare module '@inertiajs/core' {
             name: string;
             auth: Auth;
             sidebarOpen: boolean;
+            impersonating: boolean;
+            impersonator: import('@/types/auth').User | null;
             [key: string]: unknown;
         };
     }
