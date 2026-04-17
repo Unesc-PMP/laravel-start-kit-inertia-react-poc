@@ -1,6 +1,7 @@
 {
     "preset": "laravel",
     "notPath": [
+        "packages/laravel-workflow-automation",
         "tests/TestCase.php",
         "tmp"
     ],
