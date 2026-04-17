@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Http\Controllers;
+namespace App\Http\Controllers\Wizards;
 
 use Aftandilmmd\WorkflowAutomation\Enums\RunStatus;
 use Aftandilmmd\WorkflowAutomation\Models\Workflow;
@@ -10,7 +10,6 @@ use Aftandilmmd\WorkflowAutomation\Models\WorkflowRun;
 use Aftandilmmd\WorkflowAutomation\Services\WorkflowService;
 use App\Models\User;
 use App\Support\WorkflowFormProgress;
-use Database\Seeders\WorkflowFormWizardExampleSeeder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -149,10 +148,12 @@ final class MatricularWizardController
 
     private function resolveMatriculaWorkflow(): ?Workflow
     {
-        $workflow = Workflow::query()
-            ->where('name', WorkflowFormWizardExampleSeeder::WORKFLOW_NAME)
-            ->first();
+        $id = MatriculaWorkflowBinding::workflowId();
+        if ($id < 1) {
+            return null;
+        }
 
+        $workflow = Workflow::query()->find($id);
         if ($workflow === null || ! $workflow->is_active) {
             return null;
         }

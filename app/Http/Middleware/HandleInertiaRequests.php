@@ -46,6 +46,7 @@ final class HandleInertiaRequests extends Middleware
             'impersonating' => $isImpersonating,
             'impersonator' => $isImpersonating ? $impersonate->getImpersonator() : null,
             'matricula_error' => fn (): ?string => $request->session()->pull('matricula_error'),
+            'matricula_success' => fn (): ?string => $request->session()->pull('matricula_success'),
         ];
     }
 }

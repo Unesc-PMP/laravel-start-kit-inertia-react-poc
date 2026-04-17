@@ -7,4 +7,5 @@ export type SharedData = {
     impersonating: boolean;
     impersonator: User | null;
     matricula_error?: string | null;
+    matricula_success?: string | null;
 };

@@ -17,7 +17,7 @@ use Inertia\Response;
 
 final class WorkflowFormController
 {
-    public function show(string $token): Response
+    public function show(Request $request, string $token): Response
     {
         $nodeRun = $this->findWaitingFormNodeRunByToken($token);
 
@@ -40,6 +40,9 @@ final class WorkflowFormController
         $run->refresh();
         $workflow = $run->workflow()->with(['nodes', 'edges'])->firstOrFail();
 
+        $viewerName = ($u = $request->user()) !== null ? mb_trim((string) $u->name) : '';
+        $viewerDisplayName = $viewerName !== '' ? $viewerName : null;
+
         return Inertia::render('workflow-forms/Show', [
             'token' => $token,
             'step' => $step,
@@ -48,12 +51,15 @@ final class WorkflowFormController
             'previous_token' => WorkflowFormProgress::previousFormResumeToken($run, $workflow, $nodeRun),
             'progress' => [
                 'workflow_name' => $workflow->name,
-                'steps' => WorkflowFormProgress::timeline($run, $workflow, $nodeRun),
+                'workflow_description' => is_string($workflow->description) && mb_trim($workflow->description) !== ''
+                    ? mb_trim($workflow->description)
+                    : null,
+                'steps' => WorkflowFormProgress::timeline($run, $workflow, $nodeRun, $viewerDisplayName),
             ],
         ]);
     }
 
-    public function submit(Request $request, string $token, WorkflowService $workflowService): RedirectResponse|Response
+    public function submit(Request $request, string $token, WorkflowService $workflowService): RedirectResponse
     {
         $nodeRun = $this->findWaitingFormNodeRunByToken($token);
 
@@ -98,8 +104,18 @@ final class WorkflowFormController
 
         $validated = $request->validate($rules);
 
+        $payload = $validated;
+        $actor = $request->user();
+        if ($actor !== null) {
+            $payload['_submitted_by_id'] = (string) $actor->getKey();
+            $name = mb_trim((string) $actor->name);
+            if ($name !== '') {
+                $payload['_submitted_by_name'] = $name;
+            }
+        }
+
         $run = $nodeRun->workflowRun;
-        $run = $workflowService->resume($run, $token, $validated);
+        $run = $workflowService->resume($run, $token, $payload);
         $run->refresh();
 
         if ($run->isWaiting()) {
@@ -118,9 +134,9 @@ final class WorkflowFormController
             }
         }
 
-        return Inertia::render('workflow-forms/Done', [
-            'run_id' => $run->id,
-        ]);
+        return redirect()
+            ->route('matricular')
+            ->with('matricula_success', 'Matrícula concluída. A instância aparece na listagem abaixo.');
     }
 
     private function findWaitingFormNodeRunByToken(string $token): ?WorkflowNodeRun

@@ -29,9 +29,15 @@ it('mostra o passo do formulário para um token válido', function (): void {
             ->where('step.title', 'Dados pessoais')
             ->has('progress')
             ->where('progress.workflow_name', WorkflowFormWizardExampleSeeder::WORKFLOW_NAME)
+            ->where(
+                'progress.workflow_description',
+                mb_trim((string) $workflow->description),
+            )
             ->has('progress.steps', 5)
             ->where('progress.steps.1.state', 'current')
             ->where('progress.steps.1.label', 'Dados pessoais')
+            ->where('progress.steps.1.description', 'Indique o nome e o e-mail.')
+            ->where('progress.steps.1.actor_name', $user->name)
             ->where('previous_token', null)
             ->where('prefill', []));
 });
@@ -64,7 +70,9 @@ it('no segundo passo expõe o token da etapa anterior e o prefill repõe dados a
         ->assertOk()
         ->assertInertia(fn ($page) => $page
             ->where('previous_token', $firstToken)
-            ->where('step.title', 'Forma de ingresso.'));
+            ->where('step.title', 'Forma de ingresso.')
+            ->where('progress.steps.1.actor_name', $user->name)
+            ->where('progress.steps.2.actor_name', $user->name));
 
     $this->actingAs($user)
         ->get(route('workflow-forms.show', ['token' => $firstToken]))
@@ -116,8 +124,7 @@ it('submete os três passos do wizard e conclui o fluxo', function (): void {
             'accept_terms' => true,
         ]);
 
-    $third->assertOk()
-        ->assertInertia(fn ($page) => $page->component('workflow-forms/Done'));
+    $third->assertRedirect(route('matricular'));
 
     $run->refresh();
     expect($run->status)->toBe(RunStatus::Completed);

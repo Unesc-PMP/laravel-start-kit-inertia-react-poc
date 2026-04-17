@@ -10,6 +10,7 @@ use Aftandilmmd\WorkflowAutomation\Models\Workflow;
 use Aftandilmmd\WorkflowAutomation\Models\WorkflowNode;
 use Aftandilmmd\WorkflowAutomation\Models\WorkflowNodeRun;
 use Aftandilmmd\WorkflowAutomation\Models\WorkflowRun;
+use App\Models\User;
 use Illuminate\Support\Collection;
 
 final class WorkflowFormProgress
@@ -24,10 +25,16 @@ final class WorkflowFormProgress
      *     state: 'completed'|'current'|'pending',
      *     completed_at: string|null,
      *     summary_lines: list<string>,
+     *     description: string|null,
+     *     actor_name: string|null
      * }>
      */
-    public static function timeline(WorkflowRun $run, Workflow $workflow, WorkflowNodeRun $activeFormNodeRun): array
-    {
+    public static function timeline(
+        WorkflowRun $run,
+        Workflow $workflow,
+        WorkflowNodeRun $activeFormNodeRun,
+        ?string $viewerDisplayName = null,
+    ): array {
         $run->loadMissing(['nodeRuns']);
         $workflow->loadMissing(['nodes', 'edges']);
 
@@ -65,6 +72,8 @@ final class WorkflowFormProgress
                 'state' => $state,
                 'completed_at' => $completedAt,
                 'summary_lines' => self::summaryForNode($node, $context, $state),
+                'description' => self::nodeStepDescription($node),
+                'actor_name' => self::stepActorName($node, $context, $state, $viewerDisplayName),
             ];
         }
 
@@ -191,6 +200,15 @@ final class WorkflowFormProgress
                 continue;
             }
 
+            if ($node->node_key === 'send_mail') {
+                $sections[] = [
+                    'heading' => self::nodeLabel($node),
+                    'lines' => self::sendMailReadOnlyLines($mainFirst),
+                ];
+
+                continue;
+            }
+
             if ($node->type === NodeType::Trigger) {
                 $lines = [];
                 foreach ($mainFirst as $k => $v) {
@@ -288,14 +306,68 @@ final class WorkflowFormProgress
         return $node->name;
     }
 
+    private static function nodeStepDescription(WorkflowNode $node): ?string
+    {
+        $raw = $node->config['description'] ?? null;
+        if (! is_string($raw)) {
+            return null;
+        }
+
+        $trimmed = mb_trim($raw);
+
+        return $trimmed === '' ? null : $trimmed;
+    }
+
+    /**
+     * @param  array<string, mixed>  $context
+     */
+    private static function stepActorName(
+        WorkflowNode $node,
+        array $context,
+        string $state,
+        ?string $viewerDisplayName,
+    ): ?string {
+        $mainFirst = self::contextMainFirst($context, $node->id);
+        if (is_array($mainFirst)) {
+            $submitted = $mainFirst['_submitted_by_name'] ?? null;
+            if (is_string($submitted) && mb_trim($submitted) !== '') {
+                return mb_trim($submitted);
+            }
+
+            $id = $mainFirst['_submitted_by_id'] ?? null;
+            if ($id !== null && $id !== '') {
+                $resolved = User::query()->find($id)?->name;
+                if (is_string($resolved) && mb_trim($resolved) !== '') {
+                    return mb_trim($resolved);
+                }
+            }
+        }
+
+        if ($state === 'current' && $node->node_key === 'form_step') {
+            if (is_string($viewerDisplayName) && mb_trim($viewerDisplayName) !== '') {
+                return mb_trim($viewerDisplayName);
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $context
+     */
+    private static function contextMainFirst(array $context, int $nodeId): mixed
+    {
+        return data_get($context, "{$nodeId}.main.0")
+            ?? data_get($context, (string) $nodeId.'.main.0');
+    }
+
     /**
      * @param  array<string, mixed>  $context
      * @return list<string>
      */
     private static function summaryForNode(WorkflowNode $node, array $context, string $state): array
     {
-        $nodeIdKey = (string) $node->id;
-        $mainFirst = data_get($context, "{$nodeIdKey}.main.0");
+        $mainFirst = self::contextMainFirst($context, $node->id);
 
         if ($node->node_key === 'form_step') {
             if ($state === 'completed' && is_array($mainFirst)) {
@@ -329,7 +401,32 @@ final class WorkflowFormProgress
             return array_slice($lines, 0, 12);
         }
 
+        if ($node->node_key === 'send_mail' && is_array($mainFirst)) {
+            return self::sendMailReadOnlyLines($mainFirst);
+        }
+
         return [];
+    }
+
+    /**
+     * @param  array<string, mixed>  $mainFirst
+     * @return list<string>
+     */
+    private static function sendMailReadOnlyLines(array $mainFirst): array
+    {
+        $sent = ($mainFirst['mail_sent'] ?? false) === true;
+        $lines = [
+            $sent ? 'Estado: enviado' : 'Estado: não confirmado como enviado',
+        ];
+
+        foreach (['subject' => 'Assunto', 'to' => 'Para', 'mailable_to' => 'Para', 'mailable_class' => 'Mailable'] as $key => $ptLabel) {
+            $v = $mainFirst[$key] ?? null;
+            if (is_string($v) && $v !== '') {
+                $lines[] = self::formatPair($ptLabel, $v);
+            }
+        }
+
+        return $lines;
     }
 
     /**
@@ -352,7 +449,7 @@ final class WorkflowFormProgress
 
         $lines = [];
         foreach ($mainFirst as $k => $v) {
-            if (! is_string($k) || in_array($k, $ignore, true)) {
+            if (! is_string($k) || str_starts_with($k, '_') || in_array($k, $ignore, true)) {
                 continue;
             }
             if (is_array($v)) {

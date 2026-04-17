@@ -5,11 +5,25 @@ declare(strict_types=1);
 use Aftandilmmd\WorkflowAutomation\Engine\GraphExecutor;
 use Aftandilmmd\WorkflowAutomation\Enums\RunStatus;
 use Aftandilmmd\WorkflowAutomation\Models\Workflow;
+use App\Http\Controllers\Wizards\MatriculaWorkflowBinding;
 use App\Models\User;
 use Database\Seeders\WorkflowFormWizardExampleSeeder;
 
+afterEach(function (): void {
+    MatriculaWorkflowBinding::setWorkflowIdForTesting(null);
+});
+
+function configureMatriculaExampleWorkflow(): Workflow
+{
+    test()->seed(WorkflowFormWizardExampleSeeder::class);
+    $workflow = Workflow::query()->where('name', WorkflowFormWizardExampleSeeder::WORKFLOW_NAME)->firstOrFail();
+    MatriculaWorkflowBinding::setWorkflowIdForTesting((int) $workflow->getKey());
+
+    return $workflow;
+}
+
 it('mostra a página de matrícula sem iniciar o fluxo', function (): void {
-    $this->seed(WorkflowFormWizardExampleSeeder::class);
+    configureMatriculaExampleWorkflow();
 
     $user = User::factory()->create();
 
@@ -23,7 +37,7 @@ it('mostra a página de matrícula sem iniciar o fluxo', function (): void {
 });
 
 it('inicia o fluxo ao submeter POST e redireciona para o primeiro passo', function (): void {
-    $this->seed(WorkflowFormWizardExampleSeeder::class);
+    configureMatriculaExampleWorkflow();
 
     $user = User::factory()->create();
 
@@ -38,7 +52,7 @@ it('inicia o fluxo ao submeter POST e redireciona para o primeiro passo', functi
 });
 
 it('lista todas as instâncias do fluxo após iniciar uma', function (): void {
-    $this->seed(WorkflowFormWizardExampleSeeder::class);
+    configureMatriculaExampleWorkflow();
 
     $user = User::factory()->create();
 
@@ -53,7 +67,7 @@ it('lista todas as instâncias do fluxo após iniciar uma', function (): void {
 });
 
 it('outro utilizador vê a mesma instância na listagem global', function (): void {
-    $this->seed(WorkflowFormWizardExampleSeeder::class);
+    configureMatriculaExampleWorkflow();
 
     $alice = User::factory()->create(['name' => 'Alice Matrícula']);
     $bob = User::factory()->create(['name' => 'Bob Lista']);
@@ -70,6 +84,8 @@ it('outro utilizador vê a mesma instância na listagem global', function (): vo
 });
 
 it('redireciona ao dashboard com mensagem quando o workflow não existe', function (): void {
+    MatriculaWorkflowBinding::setWorkflowIdForTesting(999_999_999);
+
     $user = User::factory()->create();
 
     $this->actingAs($user)
@@ -84,10 +100,9 @@ it('redireciona ao dashboard com mensagem quando o workflow não existe', functi
 });
 
 it('permite ao titular ver na lista e abrir o resumo só de leitura de uma matrícula concluída', function (): void {
-    $this->seed(WorkflowFormWizardExampleSeeder::class);
+    $workflow = configureMatriculaExampleWorkflow();
 
     $user = User::factory()->create();
-    $workflow = Workflow::query()->where('name', WorkflowFormWizardExampleSeeder::WORKFLOW_NAME)->firstOrFail();
     $run = app(GraphExecutor::class)->execute($workflow, [['matricula_user_id' => $user->id]]);
 
     $firstToken = $run->nodeRuns()->orderByDesc('id')->first()?->output['main'][0]['resume_token'];
@@ -115,7 +130,7 @@ it('permite ao titular ver na lista e abrir o resumo só de leitura de uma matr�
             'reason' => 'Teste resumo',
             'accept_terms' => true,
         ])
-        ->assertOk();
+        ->assertRedirect(route('matricular'));
 
     $run->refresh();
     expect($run->status)->toBe(RunStatus::Completed);
@@ -145,11 +160,10 @@ it('permite ao titular ver na lista e abrir o resumo só de leitura de uma matr�
 });
 
 it('não permite a outro utilizador ver o resumo de matrícula concluída', function (): void {
-    $this->seed(WorkflowFormWizardExampleSeeder::class);
+    $workflow = configureMatriculaExampleWorkflow();
 
     $alice = User::factory()->create();
     $bob = User::factory()->create();
-    $workflow = Workflow::query()->where('name', WorkflowFormWizardExampleSeeder::WORKFLOW_NAME)->firstOrFail();
     $run = app(GraphExecutor::class)->execute($workflow, [['matricula_user_id' => $alice->id]]);
 
     $firstToken = $run->nodeRuns()->orderByDesc('id')->first()?->output['main'][0]['resume_token'];
@@ -175,7 +189,7 @@ it('não permite a outro utilizador ver o resumo de matrícula concluída', func
             'reason' => 'Motivo',
             'accept_terms' => true,
         ])
-        ->assertOk();
+        ->assertRedirect(route('matricular'));
 
     $run->refresh();
     expect($run->status)->toBe(RunStatus::Completed);
@@ -184,10 +198,9 @@ it('não permite a outro utilizador ver o resumo de matrícula concluída', func
 });
 
 it('responde 404 ao pedir resumo de instância ainda em curso', function (): void {
-    $this->seed(WorkflowFormWizardExampleSeeder::class);
+    $workflow = configureMatriculaExampleWorkflow();
 
     $user = User::factory()->create();
-    $workflow = Workflow::query()->where('name', WorkflowFormWizardExampleSeeder::WORKFLOW_NAME)->firstOrFail();
     $run = app(GraphExecutor::class)->execute($workflow, [['matricula_user_id' => $user->id]]);
 
     expect($run->fresh()->status)->toBe(RunStatus::Waiting);
@@ -196,11 +209,10 @@ it('responde 404 ao pedir resumo de instância ainda em curso', function (): voi
 });
 
 it('permite a um administrador ver o resumo de matrícula concluída de outro utilizador', function (): void {
-    $this->seed(WorkflowFormWizardExampleSeeder::class);
+    $workflow = configureMatriculaExampleWorkflow();
 
     $alice = User::factory()->create();
     $admin = User::factory()->admin()->create();
-    $workflow = Workflow::query()->where('name', WorkflowFormWizardExampleSeeder::WORKFLOW_NAME)->firstOrFail();
     $run = app(GraphExecutor::class)->execute($workflow, [['matricula_user_id' => $alice->id]]);
 
     $firstToken = $run->nodeRuns()->orderByDesc('id')->first()?->output['main'][0]['resume_token'];
@@ -226,7 +238,7 @@ it('permite a um administrador ver o resumo de matrícula concluída de outro ut
             'reason' => 'Motivo',
             'accept_terms' => true,
         ])
-        ->assertOk();
+        ->assertRedirect(route('matricular'));
 
     $run->refresh();
     expect($run->status)->toBe(RunStatus::Completed);

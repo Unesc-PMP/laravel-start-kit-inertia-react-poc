@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\DB;
 
 final class WorkflowFormWizardExampleSeeder extends Seeder
 {
-    public const string WORKFLOW_NAME = 'Exemplo: wizard com form_step';
+    public const string WORKFLOW_NAME = 'Matrícula de Calouros - POC';
 
     public function run(): void
     {
@@ -29,7 +29,7 @@ final class WorkflowFormWizardExampleSeeder extends Seeder
 
         $workflow = Workflow::query()->create([
             'name' => self::WORKFLOW_NAME,
-            'description' => 'Três passos form_step (com cartões de opção) e consolidação com set_fields.',
+            'description' => 'Matricula inicial para alunos calouros da unesc',
             'is_active' => false,
         ]);
 
@@ -111,6 +111,12 @@ final class WorkflowFormWizardExampleSeeder extends Seeder
         $stepDetails->connect($merge);
 
         $workflow->activate();
+
+        $this->command?->newLine();
+        $this->command?->info(sprintf(
+            'Assistente /matricular: ajuste DEFAULT_WORKFLOW_ID em App\\Http\\Controllers\\Wizards\\MatriculaWorkflowBinding para %s.',
+            (string) $workflow->getKey(),
+        ));
 
         $trigger->update(['position_x' => 80, 'position_y' => 160]);
         $stepPersonal->update(['position_x' => 280, 'position_y' => 160]);
