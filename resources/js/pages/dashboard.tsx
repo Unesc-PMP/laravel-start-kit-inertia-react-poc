@@ -13,16 +13,16 @@ const breadcrumbs: BreadcrumbItem[] = [
 ];
 
 export default function Dashboard() {
-    const { matricula_error } = usePage<SharedData>().props;
+    const { flows_error } = usePage<SharedData>().props;
 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
             <Head title="Dashboard" />
             <div className="flex h-full flex-1 flex-col gap-4 overflow-x-auto rounded-xl p-4">
-                {matricula_error ? (
+                {flows_error ? (
                     <Alert variant="destructive">
-                        <AlertTitle>Matrícula</AlertTitle>
-                        <AlertDescription>{matricula_error}</AlertDescription>
+                        <AlertTitle>Processos</AlertTitle>
+                        <AlertDescription>{flows_error}</AlertDescription>
                     </Alert>
                 ) : null}
                 <div className="grid auto-rows-min gap-4 md:grid-cols-3">

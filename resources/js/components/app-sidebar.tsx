@@ -1,5 +1,5 @@
 import { Link, usePage } from '@inertiajs/react';
-import { BookOpen, FolderGit2, GraduationCap, LayoutGrid, Users } from 'lucide-react';
+import { BookOpen, FolderGit2, GitBranch, LayoutGrid, Users } from 'lucide-react';
 import { useMemo } from 'react';
 import AppLogo from '@/components/app-logo';
 import { NavFooter } from '@/components/nav-footer';
@@ -14,7 +14,8 @@ import {
     SidebarMenuButton,
     SidebarMenuItem,
 } from '@/components/ui/sidebar';
-import { dashboard, matricular } from '@/routes';
+import { index as flowsIndex } from '@/routes/flows';
+import { dashboard } from '@/routes';
 import { index as usersIndex } from '@/routes/users';
 import type { NavItem, SharedData } from '@/types';
 
@@ -43,9 +44,9 @@ export function AppSidebar() {
                 icon: LayoutGrid,
             },
             {
-                title: 'Matricular',
-                href: matricular(),
-                icon: GraduationCap,
+                title: 'Processos',
+                href: flowsIndex(),
+                icon: GitBranch,
             },
         ];
 
