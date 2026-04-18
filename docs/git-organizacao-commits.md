@@ -78,9 +78,20 @@ git add resources/css/app.css resources/js
 git commit -m "style(app): formatação Tailwind e ajustes nas páginas e componentes"
 ```
 
+### 7. Política de lockfile (opcional, já aplicada no repositório)
+
+Ficheiro: `.gitignore` (entrada `/package-lock.json` na raiz).
+
+Evita commits acidentais de lock do npm quando o projeto usa **Bun**.
+
+```bash
+git add .gitignore
+git commit -m "chore: ignorar package-lock.json na raiz quando o lock é bun.lock"
+```
+
 ## Depois de commitar
 
-- `git log --oneline -6` para confirmar a sequência.
+- `git log --oneline -10` para confirmar a sequência.
 - Opcional: `git push` na branch de trabalho.
 
 ## Notas
