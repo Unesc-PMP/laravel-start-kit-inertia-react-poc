@@ -145,12 +145,12 @@
 @layer utilities {
     .scrollbar-discrete {
         scrollbar-width: thin;
-        scrollbar-color: color-mix(in oklch, var(--muted-foreground) 35%, transparent) transparent;
+        scrollbar-color: color-mix(in oklch, var(--muted-foreground) 18%, transparent) transparent;
     }
 
     .scrollbar-discrete::-webkit-scrollbar {
-        width: 5px;
-        height: 5px;
+        width: 3px;
+        height: 3px;
     }
 
     .scrollbar-discrete::-webkit-scrollbar-track {
@@ -158,11 +158,15 @@
     }
 
     .scrollbar-discrete::-webkit-scrollbar-thumb {
-        background-color: color-mix(in oklch, var(--muted-foreground) 30%, transparent);
+        background-color: color-mix(in oklch, var(--muted-foreground) 12%, transparent);
         border-radius: 9999px;
     }
 
+    .scrollbar-discrete:hover::-webkit-scrollbar-thumb {
+        background-color: color-mix(in oklch, var(--muted-foreground) 22%, transparent);
+    }
+
     .scrollbar-discrete::-webkit-scrollbar-thumb:hover {
-        background-color: color-mix(in oklch, var(--foreground) 25%, transparent);
+        background-color: color-mix(in oklch, var(--muted-foreground) 38%, transparent);
     }
 }

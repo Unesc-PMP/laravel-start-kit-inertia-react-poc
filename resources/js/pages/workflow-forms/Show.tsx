@@ -6,10 +6,13 @@ import {
     Clock,
     FilePenLine,
     GraduationCap,
+    ListTree,
+    MessageSquare,
     ScrollText,
+    Sparkles,
     type LucideIcon,
 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import InputError from '@/components/input-error';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
@@ -25,6 +28,22 @@ import { dashboard } from '@/routes';
 import { show as workflowFormShow, submit as workflowFormSubmit } from '@/routes/workflow-forms';
 import { cn } from '@/lib/utils';
 import type { BreadcrumbItem } from '@/types';
+
+const PROGRESS_PANEL_WIDTH_LS_KEY = 'workflow-form-progress-panel-width-px';
+
+const DEFAULT_PROGRESS_PANEL_PX = 448;
+
+const MIN_PROGRESS_PANEL_PX = 280;
+
+const MAX_PROGRESS_PANEL_PX = 720;
+
+type ProgressSideTabId = 'details' | 'activities' | 'ai';
+
+const PROGRESS_SIDE_TABS: { id: ProgressSideTabId; label: string; icon: LucideIcon }[] = [
+    { id: 'details', label: 'Detalhes', icon: ListTree },
+    { id: 'activities', label: 'Atividades', icon: MessageSquare },
+    { id: 'ai', label: 'IA', icon: Sparkles },
+];
 
 const CHOICE_ICON_MAP: Record<string, LucideIcon> = {
     ScrollText,
@@ -413,11 +432,14 @@ function ChoiceCardsField({
 function ProgressPanel({
     progress,
     run_id,
+    asideWidthPx,
 }: {
     progress: ProgressPayload;
     run_id: number;
+    asideWidthPx: number;
 }) {
     const [scope, setScope] = useState<'all' | 'forms'>('all');
+    const [progressTab, setProgressTab] = useState<ProgressSideTabId>('details');
 
     const formStepCount = useMemo(
         () => progress.steps.filter((s) => s.node_key === 'form_step').length,
@@ -470,12 +492,21 @@ function ProgressPanel({
     return (
         <aside
             className={cn(
-                'border-border bg-background flex min-h-0 w-full shrink-0 flex-col border-t lg:w-[min(28rem,40vw)] lg:max-w-md lg:border-t-0 lg:border-l',
+                'border-border bg-background flex min-h-0 w-full min-w-0 shrink-0 flex-col border-t',
+                'lg:max-w-none lg:flex-row lg:border-t-0 lg:border-l lg:w-[var(--progress-aside-w)] lg:min-w-[280px]',
             )}
+            style={{ ['--progress-aside-w' as string]: `${asideWidthPx}px` }}
             aria-labelledby="workflow-progress-heading"
         >
-            <div className="scrollbar-discrete flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-y-auto p-4 lg:p-5">
-                <header className="space-y-1">
+            <div
+                role="tabpanel"
+                id={`progress-tabpanel-${progressTab}`}
+                aria-labelledby={`progress-tab-${progressTab}`}
+                className="scrollbar-discrete flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-y-auto p-4 lg:min-w-0 lg:p-5"
+            >
+                {progressTab === 'details' ? (
+                    <>
+                        <header className="space-y-1">
                     <p className="text-muted-foreground font-mono text-[11px] font-medium tracking-wide uppercase">
                         Execução #{run_id}
                     </p>
@@ -672,7 +703,65 @@ function ProgressPanel({
                         );
                     })}
                 </div>
+                    </>
+                ) : null}
+                {progressTab === 'activities' ? (
+                    <div className="text-muted-foreground flex flex-1 flex-col items-center justify-center gap-3 px-2 py-12 text-center">
+                        <MessageSquare className="text-muted-foreground/35 size-10" strokeWidth={1.25} aria-hidden />
+                        <p className="text-sm leading-relaxed">Atividades do processo estarão disponíveis em breve.</p>
+                    </div>
+                ) : null}
+                {progressTab === 'ai' ? (
+                    <div className="text-muted-foreground flex flex-1 flex-col items-center justify-center gap-3 px-2 py-12 text-center">
+                        <Sparkles className="text-muted-foreground/35 size-10" strokeWidth={1.25} aria-hidden />
+                        <p className="text-sm leading-relaxed">Assistente de IA neste painel — em breve.</p>
+                    </div>
+                ) : null}
             </div>
+
+            <nav
+                role="tablist"
+                aria-label="Secções do painel de andamento"
+                className="border-border bg-background flex shrink-0 flex-row items-stretch justify-around gap-0.5 border-t px-1.5 py-2 lg:w-[4.5rem] lg:flex-col lg:justify-start lg:gap-1 lg:border-t-0 lg:border-l lg:px-2 lg:py-3"
+            >
+                {PROGRESS_SIDE_TABS.map((tab) => {
+                    const TabIcon = tab.icon;
+                    const selected = progressTab === tab.id;
+
+                    return (
+                        <button
+                            key={tab.id}
+                            type="button"
+                            role="tab"
+                            id={`progress-tab-${tab.id}`}
+                            aria-selected={selected}
+                            aria-controls={`progress-tabpanel-${tab.id}`}
+                            tabIndex={selected ? 0 : -1}
+                            onClick={() => {
+                                setProgressTab(tab.id);
+                            }}
+                            className={cn(
+                                'flex flex-1 flex-col items-center gap-1 rounded-lg px-1 py-2 text-[10px] font-medium transition-colors lg:flex-none lg:px-0.5 lg:py-2',
+                                selected
+                                    ? 'text-violet-700 dark:text-violet-200'
+                                    : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground',
+                            )}
+                        >
+                            <span
+                                className={cn(
+                                    'grid size-9 shrink-0 place-items-center rounded-lg transition-colors',
+                                    selected
+                                        ? 'bg-violet-100 dark:bg-violet-900/45'
+                                        : 'bg-transparent text-muted-foreground',
+                                )}
+                            >
+                                <TabIcon className="size-[18px] stroke-[1.5]" aria-hidden />
+                            </span>
+                            <span className="max-w-[4.25rem] text-center leading-tight">{tab.label}</span>
+                        </button>
+                    );
+                })}
+            </nav>
         </aside>
     );
 }
@@ -692,6 +781,67 @@ function WorkflowFormShowInner({ token, step, run_id, prefill, previous_token, p
 
     const form = useForm(mergeInitialData(step.fields, prefill));
     const hasChoiceCards = step.fields.some((f) => f.type === 'choice_cards');
+
+    const panelWidthRef = useRef(DEFAULT_PROGRESS_PANEL_PX);
+    const [progressPanelWidthPx, setProgressPanelWidthPx] = useState(DEFAULT_PROGRESS_PANEL_PX);
+    const progressResizeDragRef = useRef<{ startX: number; startW: number } | null>(null);
+
+    useEffect(() => {
+        panelWidthRef.current = progressPanelWidthPx;
+    }, [progressPanelWidthPx]);
+
+    useEffect(() => {
+        try {
+            const raw = localStorage.getItem(PROGRESS_PANEL_WIDTH_LS_KEY);
+            const n = raw !== null && raw !== '' ? Number(raw) : Number.NaN;
+            if (Number.isFinite(n) && n >= MIN_PROGRESS_PANEL_PX && n <= MAX_PROGRESS_PANEL_PX) {
+                setProgressPanelWidthPx(n);
+                panelWidthRef.current = n;
+            }
+        } catch {
+            /* ignore */
+        }
+    }, []);
+
+    const persistProgressPanelWidth = useCallback(() => {
+        try {
+            localStorage.setItem(PROGRESS_PANEL_WIDTH_LS_KEY, String(panelWidthRef.current));
+        } catch {
+            /* ignore */
+        }
+    }, []);
+
+    const onProgressResizePointerDown = useCallback((e: ReactPointerEvent<HTMLButtonElement>) => {
+        e.preventDefault();
+        e.currentTarget.setPointerCapture(e.pointerId);
+        progressResizeDragRef.current = {
+            startX: e.clientX,
+            startW: panelWidthRef.current,
+        };
+    }, []);
+
+    const onProgressResizePointerMove = useCallback((e: ReactPointerEvent<HTMLButtonElement>) => {
+        const drag = progressResizeDragRef.current;
+        if (drag === null) {
+            return;
+        }
+        const delta = e.clientX - drag.startX;
+        const next = Math.min(
+            MAX_PROGRESS_PANEL_PX,
+            Math.max(MIN_PROGRESS_PANEL_PX, drag.startW - delta),
+        );
+        setProgressPanelWidthPx(next);
+    }, []);
+
+    const onProgressResizePointerUp = useCallback((e: ReactPointerEvent<HTMLButtonElement>) => {
+        if (progressResizeDragRef.current !== null) {
+            progressResizeDragRef.current = null;
+            persistProgressPanelWidth();
+        }
+        if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+            e.currentTarget.releasePointerCapture(e.pointerId);
+        }
+    }, [persistProgressPanelWidth]);
 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
@@ -822,7 +972,30 @@ function WorkflowFormShowInner({ token, step, run_id, prefill, previous_token, p
                     </div>
                 </div>
 
-                <ProgressPanel progress={progress} run_id={run_id} />
+                <button
+                    type="button"
+                    aria-label="Redimensionar painel de andamento"
+                    aria-orientation="vertical"
+                    aria-valuemin={MIN_PROGRESS_PANEL_PX}
+                    aria-valuemax={MAX_PROGRESS_PANEL_PX}
+                    aria-valuenow={progressPanelWidthPx}
+                    className={cn(
+                        'relative z-10 hidden w-2 shrink-0 cursor-col-resize touch-none border-0 bg-transparent p-0 outline-none select-none',
+                        'lg:block hover:bg-muted/50 focus-visible:bg-muted/50',
+                    )}
+                    onPointerDown={onProgressResizePointerDown}
+                    onPointerMove={onProgressResizePointerMove}
+                    onPointerUp={onProgressResizePointerUp}
+                    onPointerCancel={onProgressResizePointerUp}
+                    onLostPointerCapture={onProgressResizePointerUp}
+                >
+                    <span
+                        className="bg-border pointer-events-none absolute inset-y-0 left-1/2 w-px -translate-x-1/2"
+                        aria-hidden
+                    />
+                </button>
+
+                <ProgressPanel progress={progress} run_id={run_id} asideWidthPx={progressPanelWidthPx} />
             </div>
         </AppLayout>
     );
