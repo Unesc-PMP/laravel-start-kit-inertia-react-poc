@@ -296,14 +296,30 @@ final class WorkflowFormProgress
         if ($node->node_key === 'form_step') {
             $title = $node->config['title'] ?? null;
 
-            return is_string($title) && $title !== '' ? $title : $node->name;
+            if (is_string($title) && $title !== '') {
+                return $title;
+            }
+
+            return self::nodeFallbackLabel($node);
         }
 
         if ($node->type === NodeType::Trigger) {
             return 'Início';
         }
 
-        return $node->name;
+        return self::nodeFallbackLabel($node);
+    }
+
+    private static function nodeFallbackLabel(WorkflowNode $node): string
+    {
+        $name = $node->name;
+        if (is_string($name) && mb_trim($name) !== '') {
+            return mb_trim($name);
+        }
+
+        $key = $node->node_key;
+
+        return is_string($key) && $key !== '' ? $key : 'Passo';
     }
 
     private static function nodeStepDescription(WorkflowNode $node): ?string
