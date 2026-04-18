@@ -15,6 +15,8 @@ use App\Http\Controllers\UserListController;
 use App\Http\Controllers\UserPasswordController;
 use App\Http\Controllers\UserProfileController;
 use App\Http\Controllers\UserTwoFactorAuthenticationController;
+use App\Http\Controllers\Wizards\MatricularWizardController;
+use App\Http\Controllers\WorkflowFormController;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
@@ -61,8 +63,17 @@ Route::get('/', fn () => Inertia::render('welcome'))->name('home');
 
 Route::middleware(['auth', 'verified'])->group(function (): void {
     Route::get('dashboard', fn () => Inertia::render('dashboard'))->name('dashboard');
+    Route::get('matricular', [MatricularWizardController::class, 'index'])->name('matricular');
+    Route::get('matricular/runs/{run}', [MatricularWizardController::class, 'show'])
+        ->name('matricular.runs.show');
+    Route::post('matricular', [MatricularWizardController::class, 'store'])->name('matricular.store');
     Route::get('users', [UserListController::class, 'index'])->name('users.index');
     Route::impersonate();
+
+    Route::get('workflow-forms/{token}', [WorkflowFormController::class, 'show'])
+        ->name('workflow-forms.show');
+    Route::post('workflow-forms/{token}', [WorkflowFormController::class, 'submit'])
+        ->name('workflow-forms.submit');
 });
 
 Route::middleware('auth')->group(function (): void {
