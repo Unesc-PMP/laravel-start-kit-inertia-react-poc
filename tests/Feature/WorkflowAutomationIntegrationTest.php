@@ -18,6 +18,10 @@ it('permite aceder ao editor de workflows em ambiente local', function (): void 
     $this->get('/workflow-editor')
         ->assertSuccessful()
         ->assertSee('Workflow Editor');
+
+    $this->get('/workflow-editor/32')
+        ->assertSuccessful()
+        ->assertSee('Workflow Editor');
 });
 
 it('permite listar workflows via API em ambiente local', function (): void {
