@@ -86,4 +86,4 @@ git commit -m "style(app): formatação Tailwind e ajustes nas páginas e compon
 ## Notas
 
 - Para **novas** alterações no futuro, prefira um commit por intenção (documentação, bugfix, refactor, build) em vez de um único commit grande.
-- Se `package-lock.json` aparecer na raiz por engano, remova-o ou ignore-o; o lock do projeto é `bun.lock`.
+- Na raiz do repositório, `package-lock.json` está listado em `.gitignore` porque o lock oficial é `bun.lock`. Apague o ficheiro local se tiver sido gerado por `npm install` por engano.
