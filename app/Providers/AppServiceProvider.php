@@ -25,6 +25,10 @@ final class AppServiceProvider extends ServiceProvider
         Gate::policy(Workflow::class, WorkflowPolicy::class);
         Gate::policy(WorkflowRun::class, WorkflowRunPolicy::class);
 
+        Gate::define('viewWorkflowAutomation', function ($user = null): bool {
+            return (bool) ($user?->is_admin ?? false);
+        });
+
         Workflow::observe(WorkflowDefinitionObserver::class);
 
         RegisterWorkflowPresentations::register();
