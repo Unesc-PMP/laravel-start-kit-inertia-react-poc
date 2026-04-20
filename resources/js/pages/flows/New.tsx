@@ -5,11 +5,22 @@ import {
     ChevronDown,
     ExternalLink,
     Info,
+    ListTree,
     LoaderCircle,
+    MessageSquare,
     Search,
+    Sparkles,
     UserSearch,
+    type LucideIcon,
 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+    useCallback,
+    useEffect,
+    useMemo,
+    useState,
+    type ReactNode,
+} from 'react';
+import { useDefaultLayout } from 'react-resizable-panels';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
@@ -21,6 +32,12 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import {
+    ResizableHandle,
+    ResizablePanel,
+    ResizablePanelGroup,
+} from '@/components/ui/resizable';
+import { Separator } from '@/components/ui/separator';
 import {
     Sheet,
     SheetContent,
@@ -219,6 +236,380 @@ function studentInitials(name: string): string {
     return `${parts[0][0] ?? ''}${parts[parts.length - 1][0] ?? ''}`.toUpperCase();
 }
 
+const MIN_FLOW_INTAKE_CONTEXT_PX = 280;
+
+const MAX_FLOW_INTAKE_CONTEXT_PX = 720;
+
+const ssrSafeLocalStorage = {
+    getItem: (key: string): string | null => {
+        if (typeof window === 'undefined') {
+            return null;
+        }
+
+        try {
+            return window.localStorage.getItem(key);
+        } catch {
+            return null;
+        }
+    },
+    setItem: (key: string, value: string): void => {
+        if (typeof window === 'undefined') {
+            return;
+        }
+
+        try {
+            window.localStorage.setItem(key, value);
+        } catch {
+            /* ignore */
+        }
+    },
+} as const;
+
+function IntakeScrollWrap({ children }: { children: ReactNode }) {
+    return (
+        <div className="scrollbar-discrete flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-y-auto p-4 lg:px-8 lg:py-6">
+            <div className="flex flex-col gap-6">{children}</div>
+        </div>
+    );
+}
+
+type IntakeContextTabId = 'details' | 'activities' | 'ai';
+
+const INTAKE_CONTEXT_SIDE_TABS: {
+    id: IntakeContextTabId;
+    label: string;
+    icon: LucideIcon;
+}[] = [
+    { id: 'details', label: 'Detalhes', icon: ListTree },
+    { id: 'activities', label: 'Atividades', icon: MessageSquare },
+    { id: 'ai', label: 'IA', icon: Sparkles },
+];
+
+function FlowIntakeStudentProfileCard({
+    student,
+    financialPendency,
+    dossierUrl,
+}: {
+    student: Student;
+    financialPendency: Pendency | undefined;
+    dossierUrl: string | null;
+}) {
+    return (
+        <div className="box-border overflow-hidden rounded-xl border-0 bg-transparent shadow-none ring-1 ring-border/45 dark:ring-border/60">
+            <div className="p-3 sm:p-3.5">
+                <div className="flex items-start gap-3">
+                    <Avatar className="size-12 shrink-0 rounded-lg ring-2 ring-background sm:size-14">
+                        <AvatarImage
+                            src={student.avatar_url ?? undefined}
+                            alt=""
+                        />
+                        <AvatarFallback className="rounded-lg text-sm font-semibold">
+                            {studentInitials(student.name)}
+                        </AvatarFallback>
+                    </Avatar>
+                    <div className="min-w-0 flex-1 pt-0.5">
+                        <h3 className="text-sm font-semibold leading-snug tracking-tight text-foreground line-clamp-2 sm:text-[0.9375rem]">
+                            {student.name}
+                        </h3>
+                        <div className="mt-1.5 flex flex-wrap gap-1">
+                            {financialPendency &&
+                            typeof financialPendency.amount === 'number' ? (
+                                <Badge
+                                    variant="destructive"
+                                    className="h-5 max-w-full gap-0.5 px-1.5 py-0 text-[10px] font-medium leading-none"
+                                >
+                                    <Banknote
+                                        className="size-2.5 shrink-0"
+                                        aria-hidden
+                                    />
+                                    <span className="truncate">
+                                        {formatBrl(financialPendency.amount)}
+                                    </span>
+                                </Badge>
+                            ) : financialPendency ? (
+                                <Badge
+                                    variant="destructive"
+                                    className="h-5 gap-0.5 px-1.5 py-0 text-[10px] font-medium leading-none"
+                                >
+                                    <Banknote
+                                        className="size-2.5 shrink-0"
+                                        aria-hidden
+                                    />
+                                    Financeiro
+                                </Badge>
+                            ) : null}
+                            <Badge
+                                variant="outline"
+                                className={cn(
+                                    'h-5 border px-1.5 py-0 text-[10px] font-medium leading-none',
+                                    /ativo/i.test(student.status)
+                                        ? 'border-chart-2/40 bg-chart-2/10 text-chart-2'
+                                        : 'border-border/60 bg-muted/30 text-foreground',
+                                )}
+                            >
+                                {student.status}
+                            </Badge>
+                        </div>
+                    </div>
+                </div>
+
+                {dossierUrl ? (
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        className="mt-3 h-8 w-full gap-1.5 text-xs font-medium shadow-none"
+                        asChild
+                    >
+                        <a href={dossierUrl} target="_blank" rel="noreferrer">
+                            Ficha completa
+                            <ExternalLink
+                                className="size-3.5 shrink-0 opacity-70"
+                                aria-hidden
+                            />
+                        </a>
+                    </Button>
+                ) : null}
+
+                <dl className="mt-3 overflow-hidden rounded-lg border-0 bg-accent/35 dark:bg-accent/20">
+                    <div className="divide-y divide-border/25 dark:divide-border/40">
+                        <div className="px-2.5 py-2 sm:px-3 sm:py-2.5">
+                            <dt className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                                Matrícula
+                            </dt>
+                            <dd className="mt-0.5 font-mono text-xs font-medium tabular-nums tracking-tight text-foreground">
+                                {student.code}
+                            </dd>
+                        </div>
+                        {student.cpf ? (
+                            <div className="px-2.5 py-2 sm:px-3 sm:py-2.5">
+                                <dt className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                                    CPF
+                                </dt>
+                                <dd className="mt-0.5 font-mono text-xs font-medium tabular-nums tracking-tight text-foreground">
+                                    {student.cpf}
+                                </dd>
+                            </div>
+                        ) : null}
+                        <div className="px-2.5 py-2 sm:px-3 sm:py-2.5">
+                            <dt className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                                Curso
+                            </dt>
+                            <dd className="mt-0.5 text-xs font-medium leading-snug text-foreground line-clamp-3">
+                                {student.course}
+                            </dd>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 px-2.5 py-2 sm:gap-3 sm:px-3 sm:py-2.5">
+                            <div className="min-w-0">
+                                <dt className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                                    Período
+                                </dt>
+                                <dd className="mt-0.5 text-xs font-medium text-foreground">
+                                    {student.semester}
+                                </dd>
+                            </div>
+                            <div className="min-w-0 border-l border-border/25 pl-2.5 dark:border-border/40 sm:pl-3">
+                                <dt className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                                    Unidade
+                                </dt>
+                                <dd className="mt-0.5 text-xs font-medium leading-snug text-foreground line-clamp-2">
+                                    {student.unit}
+                                </dd>
+                            </div>
+                        </div>
+                    </div>
+                </dl>
+            </div>
+        </div>
+    );
+}
+
+function FlowIntakeContextPanel({
+    isSearching,
+    hasStudent,
+    student,
+    requestedProcesses,
+    canStart,
+    hasBlockingPendency,
+    financialPendency,
+    dossierUrl,
+}: {
+    isSearching: boolean;
+    hasStudent: boolean;
+    student: Student | null;
+    requestedProcesses: RequestedProcess[];
+    canStart: boolean;
+    hasBlockingPendency: boolean;
+    financialPendency: Pendency | undefined;
+    dossierUrl: string | null;
+}) {
+    const [contextTab, setContextTab] =
+        useState<IntakeContextTabId>('details');
+
+    return (
+        <aside
+            className={cn(
+                'flex h-full min-h-0 w-full min-w-0 shrink-0 flex-col border-t border-border bg-background',
+                'lg:max-w-none lg:flex-row lg:border-t-0',
+            )}
+            aria-labelledby="flow-intake-context-heading"
+        >
+            <div
+                role="tabpanel"
+                id={`flow-intake-context-tabpanel-${contextTab}`}
+                aria-labelledby={`flow-intake-context-tab-${contextTab}`}
+                className="scrollbar-discrete flex min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-y-auto p-3 sm:p-4 lg:min-w-0 lg:p-4 lg:pl-5 lg:pr-4"
+            >
+                {contextTab === 'details' ? (
+                    <>
+                        <header className="space-y-1">
+                            <p className="font-mono text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                                Abertura de processo
+                            </p>
+                            <h2
+                                id="flow-intake-context-heading"
+                                className="text-lg font-semibold tracking-tight"
+                            >
+                                Contexto
+                            </h2>
+                            <p className="text-sm leading-snug text-muted-foreground">
+                                {isSearching
+                                    ? 'A carregar dados do estudante…'
+                                    : !hasStudent
+                                      ? 'Localize um estudante à esquerda para ver o resumo e os processos em curso.'
+                                      : canStart && !hasBlockingPendency
+                                        ? 'Pode iniciar requerimentos para este estudante.'
+                                        : hasBlockingPendency
+                                          ? 'Existem pendências a tratar antes de iniciar novos requerimentos.'
+                                          : 'Selecione um requerimento no catálogo para continuar.'}
+                            </p>
+                        </header>
+
+                        <Separator />
+
+                        {student ? (
+                            <div className="space-y-3">
+                                <FlowIntakeStudentProfileCard
+                                    student={student}
+                                    financialPendency={financialPendency}
+                                    dossierUrl={dossierUrl}
+                                />
+
+                                <div>
+                                    <p className="pb-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                                        Processos do aluno (
+                                        {requestedProcesses.length})
+                                    </p>
+                                    {requestedProcesses.length === 0 ? (
+                                        <p className="rounded-lg bg-muted/40 px-2.5 py-2 text-xs leading-relaxed text-muted-foreground">
+                                            Nenhum processo solicitado nesta
+                                            demonstração.
+                                        </p>
+                                    ) : (
+                                        <ul
+                                            className="flex flex-col gap-1.5"
+                                            role="list"
+                                        >
+                                            {requestedProcesses.map((p) => (
+                                                <li
+                                                    key={p.id}
+                                                    className="rounded-lg border-0 bg-muted/35 px-2.5 py-2 ring-1 ring-border/40 dark:bg-muted/25"
+                                                    role="listitem"
+                                                >
+                                                    <p className="text-xs font-medium leading-snug text-foreground line-clamp-2">
+                                                        {p.title}
+                                                    </p>
+                                                    <p className="mt-0.5 text-[10px] text-muted-foreground">
+                                                        {p.status} ·{' '}
+                                                        {p.created_at}
+                                                    </p>
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    )}
+                                </div>
+                            </div>
+                        ) : null}
+                    </>
+                ) : null}
+                {contextTab === 'activities' ? (
+                    <div className="flex flex-1 flex-col items-center justify-center gap-3 px-2 py-12 text-center text-muted-foreground">
+                        <MessageSquare
+                            className="size-10 text-muted-foreground/35"
+                            strokeWidth={1.25}
+                            aria-hidden
+                        />
+                        <p className="text-sm leading-relaxed">
+                            Atividades da abertura de processo estarão disponíveis
+                            em breve.
+                        </p>
+                    </div>
+                ) : null}
+                {contextTab === 'ai' ? (
+                    <div className="flex flex-1 flex-col items-center justify-center gap-3 px-2 py-12 text-center text-muted-foreground">
+                        <Sparkles
+                            className="size-10 text-muted-foreground/35"
+                            strokeWidth={1.25}
+                            aria-hidden
+                        />
+                        <p className="text-sm leading-relaxed">
+                            Assistente de IA neste painel — em breve.
+                        </p>
+                    </div>
+                ) : null}
+            </div>
+
+            <nav
+                role="tablist"
+                aria-label="Secções do painel de contexto"
+                className="flex shrink-0 flex-row items-stretch justify-around gap-0.5 border-t border-border bg-background px-1.5 py-2 lg:w-[4.5rem] lg:flex-col lg:justify-start lg:gap-1 lg:border-t-0 lg:border-l lg:px-2 lg:py-3"
+            >
+                {INTAKE_CONTEXT_SIDE_TABS.map((tab) => {
+                    const TabIcon = tab.icon;
+                    const selected = contextTab === tab.id;
+
+                    return (
+                        <button
+                            key={tab.id}
+                            type="button"
+                            role="tab"
+                            id={`flow-intake-context-tab-${tab.id}`}
+                            aria-selected={selected}
+                            aria-controls={`flow-intake-context-tabpanel-${tab.id}`}
+                            tabIndex={selected ? 0 : -1}
+                            onClick={() => {
+                                setContextTab(tab.id);
+                            }}
+                            className={cn(
+                                'flex flex-1 flex-col items-center gap-1 rounded-lg px-1 py-2 text-[10px] font-medium transition-colors lg:flex-none lg:px-0.5 lg:py-2',
+                                selected
+                                    ? 'text-violet-700 dark:text-violet-200'
+                                    : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground',
+                            )}
+                        >
+                            <span
+                                className={cn(
+                                    'grid size-9 shrink-0 place-items-center rounded-lg transition-colors',
+                                    selected
+                                        ? 'bg-violet-100 dark:bg-violet-900/45'
+                                        : 'bg-transparent text-muted-foreground',
+                                )}
+                            >
+                                <TabIcon
+                                    className="size-[18px] stroke-[1.5]"
+                                    aria-hidden
+                                />
+                            </span>
+                            <span className="max-w-[4.25rem] text-center leading-tight">
+                                {tab.label}
+                            </span>
+                        </button>
+                    );
+                })}
+            </nav>
+        </aside>
+    );
+}
+
 export default function FlowsNew({
     query,
     requirements,
@@ -249,6 +640,31 @@ export default function FlowsNew({
     const [selectedRequirementId, setSelectedRequirementId] = useState<
         number | null
     >(null);
+
+    const [lgUp, setLgUp] = useState(
+        () =>
+            typeof window !== 'undefined' &&
+            window.matchMedia('(min-width: 1024px)').matches,
+    );
+
+    useEffect(() => {
+        const mq = window.matchMedia('(min-width: 1024px)');
+        const fn = () => {
+            setLgUp(mq.matches);
+        };
+        fn();
+        mq.addEventListener('change', fn);
+
+        return () => {
+            mq.removeEventListener('change', fn);
+        };
+    }, []);
+
+    const layoutPersistence = useDefaultLayout({
+        id: 'flow-intake-resize',
+        panelIds: ['flow-intake-primary', 'flow-intake-context'],
+        storage: ssrSafeLocalStorage,
+    });
 
     const canSearch = useMemo(() => q.trim().length >= 3, [q]);
 
@@ -338,7 +754,7 @@ export default function FlowsNew({
             pendencies.length === 1 &&
             pendencies[0]?.type === 'academic'
         ) {
-            return 'Pendência académica detetada';
+            return 'Pendência acadêmica';
         }
 
         return 'Pendências detetadas';
@@ -597,34 +1013,23 @@ export default function FlowsNew({
         [canStart, searchResult?.student],
     );
 
-    return (
-        <AppLayout breadcrumbs={breadcrumbs}>
-            <Head title="Novo processo" />
-            <div className="flex flex-1 flex-col gap-6 p-4">
-                <div>
-                    <h1 className="text-2xl font-semibold tracking-tight">
-                        Abertura de requerimento  
-                    </h1>
-                    <p className="text-sm text-muted-foreground">
-                        {hasStudent
-                            ? 'Selecione o requerimento e inicie o processo para este aluno.'
-                            : 'Comece por localizar o aluno. Os requerimentos ficam disponíveis na etapa seguinte.'}
-                    </p>
-                </div>
+    const renderPrimary = () => {
+        const student = searchResult?.student ?? null;
 
-                <Card
-                    className={cn(
-                        'gap-4',
-                        !hasStudent &&
-                            'box-content max-w-full border-0 bg-accent text-accent-foreground shadow-sm [&_.text-muted-foreground]:text-accent-foreground/75 [&_[data-slot=card-title]]:font-normal [&_[data-slot=card-title]]:text-accent-foreground/55',
-                    )}
-                >
-                    <CardHeader className="space-y-0 px-6 pb-0 pt-6">
-                        <CardTitle className="text-[0.65rem] font-normal uppercase tracking-[0.2em] text-muted-foreground/65">
-                            Pesquisa de estudante
-                        </CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-2 px-6 pb-6 pt-2">
+        return (
+            <>
+            <div>
+                <h1 className="text-2xl font-semibold tracking-tight">
+                    Abertura de requerimento
+                </h1>
+                <p className="text-sm text-muted-foreground">
+                    {hasStudent
+                        ? 'Selecione o requerimento e inicie o processo para este aluno.'
+                        : 'Comece por localizar o aluno. Os requerimentos ficam disponíveis na etapa seguinte.'}
+                </p>
+            </div>
+
+            <CardContent className="space-y-2 px-6 pb-6 pt-2">
                         <div className="flex flex-col gap-3 sm:flex-row sm:items-stretch">
                             <div className="relative min-w-0 flex-1">
                                 <UserSearch
@@ -689,7 +1094,8 @@ export default function FlowsNew({
                             para pendência académica.
                         </p>
                     </CardContent>
-                </Card>
+
+                
 
                 {isSearching ? (
                     <Alert>
@@ -699,176 +1105,6 @@ export default function FlowsNew({
                             Buscando estudante e pendências.
                         </AlertDescription>
                     </Alert>
-                ) : null}
-
-                {hasStudent ? (
-                    <Card className="overflow-hidden shadow-sm">
-                        <CardContent className="p-4 sm:p-6">
-                            <div className="flex flex-col gap-6 sm:flex-row sm:items-stretch">
-                                <div className="shrink-0 self-start">
-                                    <Avatar className="size-24 rounded-xl">
-                                        <AvatarImage
-                                            src={
-                                                searchResult.student
-                                                    .avatar_url ?? undefined
-                                            }
-                                            alt=""
-                                        />
-                                        <AvatarFallback className="rounded-xl text-lg font-semibold">
-                                            {studentInitials(
-                                                searchResult.student.name,
-                                            )}
-                                        </AvatarFallback>
-                                    </Avatar>
-                                </div>
-
-                                <div className="min-w-0 flex-1 space-y-4">
-                                    <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                                        <div className="min-w-0 space-y-3">
-                                            <h2 className="text-xl font-semibold tracking-tight text-foreground sm:text-2xl">
-                                                {searchResult.student.name}
-                                            </h2>
-                                            <div className="flex flex-wrap items-center gap-2">
-                                                {financialPendency &&
-                                                typeof financialPendency.amount ===
-                                                    'number' ? (
-                                                    <Badge
-                                                        variant="destructive"
-                                                        className="max-w-full font-medium"
-                                                    >
-                                                        <Banknote
-                                                            className="shrink-0"
-                                                            aria-hidden
-                                                        />
-                                                        <span className="truncate">
-                                                            Dívida:{' '}
-                                                            {formatBrl(
-                                                                financialPendency.amount,
-                                                            )}
-                                                        </span>
-                                                    </Badge>
-                                                ) : financialPendency ? (
-                                                    <Badge variant="destructive">
-                                                        <Banknote
-                                                            className="shrink-0"
-                                                            aria-hidden
-                                                        />
-                                                        Pendência financeira
-                                                    </Badge>
-                                                ) : null}
-                                                <Badge
-                                                    variant="outline"
-                                                    className={cn(
-                                                        'border font-medium',
-                                                        /ativo/i.test(
-                                                            searchResult.student
-                                                                .status,
-                                                        )
-                                                            ? 'border-chart-2/35 bg-chart-2/10 text-chart-2'
-                                                            : 'border-border bg-muted/40 text-foreground',
-                                                    )}
-                                                >
-                                                    {searchResult.student.status}
-                                                </Badge>
-                                            </div>
-                                        </div>
-                                        {dossierUrl ? (
-                                            <Button
-                                                variant="outline"
-                                                size="sm"
-                                                className="shrink-0 self-start"
-                                                asChild
-                                            >
-                                                <a
-                                                    href={dossierUrl}
-                                                    target="_blank"
-                                                    rel="noreferrer"
-                                                >
-                                                    Abrir ficha completa
-                                                    <ExternalLink
-                                                        className="ml-2 size-4"
-                                                        aria-hidden
-                                                    />
-                                                </a>
-                                            </Button>
-                                        ) : null}
-                                    </div>
-
-                                    <div className="rounded-lg border border-border/70 bg-muted/25 px-4 py-3 sm:px-5">
-                                        <div
-                                            className={cn(
-                                                'grid gap-4',
-                                                searchResult.student.cpf
-                                                    ? 'sm:grid-cols-2 sm:gap-x-10'
-                                                    : 'max-w-md',
-                                            )}
-                                        >
-                                            <div className="min-w-0 space-y-1">
-                                                <p className="text-[0.65rem] font-semibold uppercase tracking-wider text-muted-foreground">
-                                                    Matrícula
-                                                </p>
-                                                <p className="font-mono text-sm font-medium tabular-nums tracking-tight text-foreground">
-                                                    {
-                                                        searchResult.student
-                                                            .code
-                                                    }
-                                                </p>
-                                            </div>
-                                            {searchResult.student.cpf ? (
-                                                <div className="min-w-0 space-y-1 sm:border-l sm:border-border/60 sm:pl-10">
-                                                    <p className="text-[0.65rem] font-semibold uppercase tracking-wider text-muted-foreground">
-                                                        CPF
-                                                    </p>
-                                                    <p className="font-mono text-sm font-medium tabular-nums tracking-tight text-foreground">
-                                                        {
-                                                            searchResult.student
-                                                                .cpf
-                                                        }
-                                                    </p>
-                                                </div>
-                                            ) : null}
-                                        </div>
-
-                                        <div className="mt-4 grid gap-4 border-t border-border/50 pt-4 sm:grid-cols-3 sm:gap-x-10">
-                                            <div className="min-w-0 space-y-1">
-                                                <p className="text-[0.65rem] font-semibold uppercase tracking-wider text-muted-foreground">
-                                                    Curso matriculado
-                                                </p>
-                                                <p className="text-sm font-semibold text-foreground">
-                                                    {
-                                                        searchResult.student
-                                                            .course
-                                                    }
-                                                </p>
-                                            </div>
-                                            <div className="min-w-0 space-y-1 sm:border-l sm:border-border/60 sm:pl-10">
-                                                <p className="text-[0.65rem] font-semibold uppercase tracking-wider text-muted-foreground">
-                                                    Período atual
-                                                </p>
-                                                <p className="text-sm font-semibold text-foreground">
-                                                    {
-                                                        searchResult.student
-                                                            .semester
-                                                    }
-                                                </p>
-                                            </div>
-                                            <div className="min-w-0 space-y-1 sm:border-l sm:border-border/60 sm:pl-10">
-                                                <p className="text-[0.65rem] font-semibold uppercase tracking-wider text-muted-foreground">
-                                                    Unidade
-                                                </p>
-                                                <p className="text-sm font-semibold text-foreground">
-                                                    {
-                                                        searchResult.student
-                                                            .unit
-                                                    }
-                                                </p>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </CardContent>
-                    </Card>
                 ) : null}
 
                 {hasStudent && pendencies.length > 0 ? (
@@ -995,14 +1231,6 @@ export default function FlowsNew({
                                                         Simular aprovação
                                                     </Button>
                                                 </>
-                                            ) : overrideStatus ===
-                                              'approved' ? (
-                                                <Badge
-                                                    variant="secondary"
-                                                    className="border-amber-200/80 bg-amber-100/80 text-amber-950 dark:border-amber-800 dark:bg-amber-900/60 dark:text-amber-50"
-                                                >
-                                                    Quebra autorizada
-                                                </Badge>
                                             ) : (
                                                 <Button
                                                     type="button"
@@ -1021,7 +1249,7 @@ export default function FlowsNew({
                     </Collapsible>
                 ) : null}
 
-                {hasStudent ? (
+                {student ? (
                 <Card className="box-content overflow-hidden border-0 shadow-none">
                     <CardContent className="p-0">
                         <div className="px-6 pt-6">
@@ -1388,6 +1616,70 @@ export default function FlowsNew({
                     </CardContent>
                 </Card>
                 ) : null}
+        </>
+        );
+    };
+
+    return (
+        <AppLayout breadcrumbs={breadcrumbs}>
+            <Head title="Novo processo" />
+            <div className="flex min-h-0 flex-1 flex-col lg:max-h-[calc(100svh-4rem-var(--impersonation-banner-offset,0px))] lg:min-h-0">
+                {lgUp ? (
+                    <ResizablePanelGroup
+                        orientation="horizontal"
+                        className="flex min-h-0 flex-1"
+                        defaultLayout={layoutPersistence.defaultLayout}
+                        onLayoutChanged={layoutPersistence.onLayoutChanged}
+                    >
+                        <ResizablePanel
+                            id="flow-intake-primary"
+                            className="flex min-h-0 min-w-0"
+                            minSize="24%"
+                        >
+                            <IntakeScrollWrap>
+                                {renderPrimary()}
+                            </IntakeScrollWrap>
+                        </ResizablePanel>
+                        <ResizableHandle
+                            withHandle
+                            className="bg-border/60"
+                            aria-label="Redimensionar painel de contexto"
+                        />
+                        <ResizablePanel
+                            id="flow-intake-context"
+                            className="flex min-h-0 min-w-0"
+                            minSize={`${MIN_FLOW_INTAKE_CONTEXT_PX}px`}
+                            maxSize={`${MAX_FLOW_INTAKE_CONTEXT_PX}px`}
+                        >
+                            <FlowIntakeContextPanel
+                                isSearching={isSearching}
+                                hasStudent={hasStudent}
+                                student={searchResult?.student ?? null}
+                                requestedProcesses={requestedProcesses}
+                                canStart={canStart}
+                                hasBlockingPendency={hasBlockingPendency}
+                                financialPendency={financialPendency}
+                                dossierUrl={dossierUrl}
+                            />
+                        </ResizablePanel>
+                    </ResizablePanelGroup>
+                ) : (
+                    <div className="flex min-h-0 flex-1 flex-col">
+                        <IntakeScrollWrap>
+                            {renderPrimary()}
+                        </IntakeScrollWrap>
+                        <FlowIntakeContextPanel
+                            isSearching={isSearching}
+                            hasStudent={hasStudent}
+                            student={searchResult?.student ?? null}
+                            requestedProcesses={requestedProcesses}
+                            canStart={canStart}
+                            hasBlockingPendency={hasBlockingPendency}
+                            financialPendency={financialPendency}
+                            dossierUrl={dossierUrl}
+                        />
+                    </div>
+                )}
             </div>
 
             <Sheet open={negotiationOpen} onOpenChange={setNegotiationOpen}>
