@@ -4,6 +4,7 @@ import {
     Banknote,
     ChevronDown,
     ExternalLink,
+    FileText,
     Info,
     ListTree,
     LoaderCircle,
@@ -123,6 +124,69 @@ function requirementMatchesCatalogPill(
     }
 
     return true;
+}
+
+function requirementServiceGuidance(r: Requirement): {
+    audience: string;
+    feeLabel: string;
+} {
+    const h = requirementHaystack(r);
+    let audience =
+        'Alunos com vínculo ativo na instituição, em situação regular perante o regimento e as normas do curso.';
+    if (
+        h.includes('calour') ||
+        h.includes('calouro') ||
+        h.includes('ingress')
+    ) {
+        audience =
+            'Calouros e estudantes no primeiro período letivo da graduação, incluindo ingressantes por vestibular, ENEM ou transferência externa quando o fluxo for equivalente.';
+    }
+    if (h.includes('bolsa') || h.includes('scholar')) {
+        audience =
+            'Estudantes que pretendem solicitar, manter ou renovar benefícios de bolsa, conforme editais e comissões competentes.';
+    }
+    if (
+        h.includes('matrí') ||
+        h.includes('matri') ||
+        h.includes('tranc') ||
+        h.includes('rematr')
+    ) {
+        audience =
+            'Estudantes de graduação ou pós-graduação que precisam alterar o vínculo académico (matrícula, trancamento, rematrícula ou cancelamento de disciplinas).';
+    }
+    if (
+        h.includes('finan') ||
+        h.includes('débit') ||
+        h.includes('debit') ||
+        h.includes('pagamento') ||
+        h.includes('dívida')
+    ) {
+        audience =
+            'Alunos com débitos, parcelas em atraso ou que necessitam de documentos e acertos junto ao setor financeiro.';
+    }
+
+    let feeLabel =
+        'Sem taxa fixa de abertura neste passo; custos específicos, se existirem, são informados nas etapas seguintes do fluxo ou na tabela de serviços.';
+    if (
+        h.includes('finan') ||
+        h.includes('taxa') ||
+        h.includes('pagamento') ||
+        h.includes('dívida')
+    ) {
+        feeLabel =
+            'Valores dependem da situação individual (parcelas, multas, descontos). Não comprometa valores ao aluno sem confirmar no financeiro ou no fluxo de cobrança.';
+    }
+    if (
+        h.includes('certid') ||
+        h.includes('declara') ||
+        h.includes('histórico') ||
+        h.includes('historico')
+    ) {
+        feeLabel =
+            'Pode haver taxa por emissão, segunda via ou envio; consulte a tabela de serviços académicos e prazos de entrega.';
+    }
+
+    return { audience, feeLabel };
 }
 
 type RequestedProcess = {
@@ -273,7 +337,7 @@ function IntakeScrollWrap({ children }: { children: ReactNode }) {
     );
 }
 
-type IntakeContextTabId = 'details' | 'activities' | 'ai';
+type IntakeContextTabId = 'details' | 'service' | 'activities' | 'ai';
 
 const INTAKE_CONTEXT_SIDE_TABS: {
     id: IntakeContextTabId;
@@ -281,6 +345,7 @@ const INTAKE_CONTEXT_SIDE_TABS: {
     icon: LucideIcon;
 }[] = [
     { id: 'details', label: 'Detalhes', icon: ListTree },
+    { id: 'service', label: 'Guia', icon: FileText },
     { id: 'activities', label: 'Atividades', icon: MessageSquare },
     { id: 'ai', label: 'IA', icon: Sparkles },
 ];
@@ -295,8 +360,7 @@ function FlowIntakeStudentProfileCard({
     dossierUrl: string | null;
 }) {
     return (
-        <div className="box-border overflow-hidden rounded-xl border-0 bg-transparent shadow-none ring-1 ring-border/45 dark:ring-border/60">
-            <div className="p-3 sm:p-3.5">
+        <div className="min-w-0 p-3 sm:p-3.5">
                 <div className="flex items-start gap-3">
                     <Avatar className="size-12 shrink-0 rounded-lg ring-2 ring-background sm:size-14">
                         <AvatarImage
@@ -418,7 +482,6 @@ function FlowIntakeStudentProfileCard({
                         </div>
                     </div>
                 </dl>
-            </div>
         </div>
     );
 }
@@ -432,6 +495,10 @@ function FlowIntakeContextPanel({
     hasBlockingPendency,
     financialPendency,
     dossierUrl,
+    contextTab,
+    onContextTabChange,
+    selectedRequirement,
+    onStartRequirement,
 }: {
     isSearching: boolean;
     hasStudent: boolean;
@@ -441,17 +508,18 @@ function FlowIntakeContextPanel({
     hasBlockingPendency: boolean;
     financialPendency: Pendency | undefined;
     dossierUrl: string | null;
+    contextTab: IntakeContextTabId;
+    onContextTabChange: (tab: IntakeContextTabId) => void;
+    selectedRequirement: Requirement | null;
+    onStartRequirement: (workflowId: number) => void;
 }) {
-    const [contextTab, setContextTab] =
-        useState<IntakeContextTabId>('details');
-
     return (
         <aside
             className={cn(
                 'flex h-full min-h-0 w-full min-w-0 shrink-0 flex-col border-t border-border bg-background',
                 'lg:max-w-none lg:flex-row lg:border-t-0',
             )}
-            aria-labelledby="flow-intake-context-heading"
+            aria-label="Painel lateral de contexto da abertura de processo"
         >
             <div
                 role="tabpanel"
@@ -531,6 +599,121 @@ function FlowIntakeContextPanel({
                         ) : null}
                     </>
                 ) : null}
+                {contextTab === 'service' ? (
+                    <div className="flex min-h-0 flex-1 flex-col gap-3">
+                        {!selectedRequirement ? (
+                            <div className="flex flex-1 flex-col items-center justify-center gap-3 px-1 py-10 text-center">
+                                <Info
+                                    className="size-9 text-muted-foreground/40"
+                                    strokeWidth={1.5}
+                                    aria-hidden
+                                />
+                                <p className="text-sm leading-relaxed text-muted-foreground">
+                                    Toque num requerimento na lista à esquerda
+                                    para abrir o guia do serviço, público-alvo,
+                                    orientação sobre valores e o botão para
+                                    iniciar o processo a partir deste painel.
+                                </p>
+                            </div>
+                        ) : (
+                            <>
+                                <header className="space-y-2">
+                                    <p className="font-mono text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                                        Serviço
+                                    </p>
+                                    <h2
+                                        id="flow-intake-service-title"
+                                        className="text-lg font-semibold leading-snug tracking-tight text-foreground"
+                                    >
+                                        {selectedRequirement.title}
+                                    </h2>
+                                    <div className="flex flex-wrap gap-1">
+                                        <Badge variant="outline" className="text-[10px] font-medium">
+                                            {selectedRequirement.group}
+                                        </Badge>
+                                        {selectedRequirement.tags
+                                            .slice(0, 6)
+                                            .map((t) => (
+                                                <Badge
+                                                    key={t}
+                                                    variant="secondary"
+                                                    className="text-[10px] font-normal"
+                                                >
+                                                    {t}
+                                                </Badge>
+                                            ))}
+                                    </div>
+                                </header>
+
+                                <Separator />
+
+                                <section className="space-y-1.5">
+                                    <h3 className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                                        O que é
+                                    </h3>
+                                    <p className="text-sm leading-relaxed text-foreground whitespace-pre-wrap">
+                                        {selectedRequirement.description?.trim() ||
+                                            `Fluxo associado a «${selectedRequirement.title}». Utilize a descrição oficial do catálogo quando existir; este texto resume o tipo de processo para orientação do atendimento.`}
+                                    </p>
+                                </section>
+
+                                {(() => {
+                                    const guide =
+                                        requirementServiceGuidance(
+                                            selectedRequirement,
+                                        );
+
+                                    return (
+                                        <>
+                                            <section className="space-y-1.5 rounded-lg bg-accent/30 px-3 py-2.5 dark:bg-accent/15">
+                                                <h3 className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                                                    Para quem se destina
+                                                </h3>
+                                                <p className="text-xs leading-relaxed text-foreground">
+                                                    {guide.audience}
+                                                </p>
+                                            </section>
+                                            <section className="space-y-1.5 rounded-lg border border-border/50 bg-muted/35 px-3 py-2.5 dark:bg-muted/20">
+                                                <h3 className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                                                    Taxas e valores
+                                                </h3>
+                                                <p className="text-xs leading-relaxed text-foreground">
+                                                    {guide.feeLabel}
+                                                </p>
+                                            </section>
+                                        </>
+                                    );
+                                })()}
+
+                                <Separator />
+
+                                <div className="space-y-2">
+                                    <Button
+                                        type="button"
+                                        className="w-full"
+                                        disabled={!canStart}
+                                        onClick={() =>
+                                            onStartRequirement(
+                                                selectedRequirement.id,
+                                            )
+                                        }
+                                    >
+                                        Iniciar este requerimento
+                                    </Button>
+                                    {!canStart ? (
+                                        <p className="text-center text-[11px] leading-snug text-muted-foreground">
+                                            {hasBlockingPendency
+                                                ? 'Regularize as pendências do aluno para permitir a abertura.'
+                                                : hasStudent
+                                                  ? 'Não é possível iniciar neste momento.'
+                                                  : 'Localize um aluno antes de iniciar.'}
+                                        </p>
+                                    ) : null}
+                                </div>
+                            </>
+                        )}
+                    </div>
+                ) : null}
                 {contextTab === 'activities' ? (
                     <div className="flex flex-1 flex-col items-center justify-center gap-3 px-2 py-12 text-center text-muted-foreground">
                         <MessageSquare
@@ -577,7 +760,7 @@ function FlowIntakeContextPanel({
                             aria-controls={`flow-intake-context-tabpanel-${tab.id}`}
                             tabIndex={selected ? 0 : -1}
                             onClick={() => {
-                                setContextTab(tab.id);
+                                onContextTabChange(tab.id);
                             }}
                             className={cn(
                                 'flex flex-1 flex-col items-center gap-1 rounded-lg px-1 py-2 text-[10px] font-medium transition-colors lg:flex-none lg:px-0.5 lg:py-2',
@@ -640,6 +823,8 @@ export default function FlowsNew({
     const [selectedRequirementId, setSelectedRequirementId] = useState<
         number | null
     >(null);
+    const [intakeContextTab, setIntakeContextTab] =
+        useState<IntakeContextTabId>('details');
 
     const [lgUp, setLgUp] = useState(
         () =>
@@ -745,10 +930,10 @@ export default function FlowsNew({
             financialPendency &&
             typeof financialPendency.amount === 'number'
         ) {
-            return `Pendência financeira detetada: ${formatBrl(financialPendency.amount)}`;
+            return `Pendência financeira: ${formatBrl(financialPendency.amount)}`;
         }
         if (financialPendency) {
-            return 'Pendência financeira detetada';
+            return 'Pendência financeira';
         }
         if (
             pendencies.length === 1 &&
@@ -757,7 +942,7 @@ export default function FlowsNew({
             return 'Pendência acadêmica';
         }
 
-        return 'Pendências detetadas';
+        return 'Pendências do aluno';
     }, [financialPendency, pendencies]);
 
     const pendencyBannerSubtitle = useMemo(() => {
@@ -983,8 +1168,15 @@ export default function FlowsNew({
         return pillFilteredRequirements.filter((r) => !used.has(r.id));
     }, [pillFilteredRequirements, popularRequirements, recentRequirements]);
 
+    const selectedCatalogRequirement = useMemo(
+        () =>
+            requirements.find((r) => r.id === selectedRequirementId) ?? null,
+        [requirements, selectedRequirementId],
+    );
+
     const selectRequirement = useCallback((id: number) => {
         setSelectedRequirementId(id);
+        setIntakeContextTab('service');
         const current = readRecentRequirementIds().filter((x) => x !== id);
         writeRecentRequirementIds([id, ...current].slice(0, 8));
     }, []);
@@ -1029,7 +1221,8 @@ export default function FlowsNew({
                 </p>
             </div>
 
-            <CardContent className="space-y-2 px-6 pb-6 pt-2">
+
+            <CardContent className="space-y-2 px-6 pb-0 pt-2">
                         <div className="flex flex-col gap-3 sm:flex-row sm:items-stretch">
                             <div className="relative min-w-0 flex-1">
                                 <UserSearch
@@ -1093,9 +1286,9 @@ export default function FlowsNew({
                             </span>{' '}
                             para pendência académica.
                         </p>
-                    </CardContent>
+                </CardContent>
 
-                
+        
 
                 {isSearching ? (
                     <Alert>
@@ -1253,7 +1446,7 @@ export default function FlowsNew({
                 <Card className="box-content overflow-hidden border-0 shadow-none">
                     <CardContent className="p-0">
                         <div className="px-6 pt-6">
-                            <div className="flex flex-col gap-3 border-b border-border pb-0 sm:flex-row sm:items-end sm:justify-between sm:gap-6">
+                            <div className="flex flex-col gap-3 border-b border-border pb-3 sm:flex-row sm:items-end sm:justify-between sm:gap-6">
                                 <div
                                     className="flex min-w-0 flex-wrap gap-6 sm:gap-8"
                                     role="tablist"
@@ -1313,7 +1506,7 @@ export default function FlowsNew({
                                     </button>
                                 </div>
                                 {activeTab === 'catalog' ? (
-                                    <div className="relative w-full min-w-0 shrink-0 sm:max-w-xs sm:pb-2.5">
+                                    <div className="relative w-full min-w-0 shrink-0 sm:max-w-xs">
                                         <label
                                             htmlFor="flows-intake-service-filter"
                                             className="sr-only"
@@ -1331,7 +1524,10 @@ export default function FlowsNew({
                                                 setFilterText(e.target.value)
                                             }
                                             placeholder="Filtrar serviços…"
-                                            className="h-9 border-border/80 bg-background pl-9 shadow-none"
+                                            className={cn(
+                                                'my-0 h-10 border-border/80 bg-background py-0 pl-9 pr-3 text-sm leading-10 shadow-xs',
+                                                'placeholder:text-muted-foreground',
+                                            )}
                                         />
                                     </div>
                                 ) : null}
@@ -1410,13 +1606,11 @@ export default function FlowsNew({
                                                         key={r.id}
                                                         role="button"
                                                         tabIndex={0}
-                                                        className={
-                                                            'cursor-pointer transition-colors hover:bg-accent/20 ' +
-                                                            (selectedRequirementId ===
-                                                            r.id
-                                                                ? 'ring-2 ring-ring'
-                                                                : '')
-                                                        }
+                                                        className={cn(
+                                                            'h-full gap-0 cursor-pointer transition-colors hover:bg-accent/20',
+                                                            selectedRequirementId ===
+                                                                r.id && 'ring-2 ring-ring',
+                                                        )}
                                                         onClick={() =>
                                                             selectRequirement(r.id)
                                                         }
@@ -1437,7 +1631,7 @@ export default function FlowsNew({
                                                             ) : null}
                                                             
                                                         </CardHeader>
-                                                        <CardContent className="pt-0">
+                                                        <CardContent className="mt-auto pt-2">
                                                             <Button
                                                                 type="button"
                                                                 disabled={!canStart}
@@ -1466,13 +1660,11 @@ export default function FlowsNew({
                                                         key={r.id}
                                                         role="button"
                                                         tabIndex={0}
-                                                        className={
-                                                            'cursor-pointer transition-colors hover:bg-accent/20 ' +
-                                                            (selectedRequirementId ===
-                                                            r.id
-                                                                ? 'ring-2 ring-ring'
-                                                                : '')
-                                                        }
+                                                        className={cn(
+                                                            'h-full gap-0 cursor-pointer transition-colors hover:bg-accent/20',
+                                                            selectedRequirementId ===
+                                                                r.id && 'ring-2 ring-ring',
+                                                        )}
                                                         onClick={() =>
                                                             selectRequirement(r.id)
                                                         }
@@ -1499,7 +1691,7 @@ export default function FlowsNew({
                                                                     ))}
                                                             </div>
                                                         </CardHeader>
-                                                        <CardContent className="pt-0">
+                                                        <CardContent className="mt-auto pt-2">
                                                             <Button
                                                                 type="button"
                                                                 disabled={!canStart}
@@ -1529,13 +1721,12 @@ export default function FlowsNew({
                                                             key={r.id}
                                                             role="button"
                                                             tabIndex={0}
-                                                            className={
-                                                                'cursor-pointer transition-colors hover:bg-accent/20 ' +
-                                                                (selectedRequirementId ===
-                                                                r.id
-                                                                    ? 'ring-2 ring-ring'
-                                                                    : '')
-                                                            }
+                                                            className={cn(
+                                                                'h-full gap-0 cursor-pointer transition-colors hover:bg-accent/20',
+                                                                selectedRequirementId ===
+                                                                    r.id &&
+                                                                    'ring-2 ring-ring',
+                                                            )}
                                                             onClick={() =>
                                                                 selectRequirement(
                                                                     r.id,
@@ -1587,7 +1778,7 @@ export default function FlowsNew({
                                                                         )}
                                                                 </div>
                                                             </CardHeader>
-                                                            <CardContent className="pt-0 flex items-center justify-between gap-2">
+                                                            <CardContent className="mt-auto flex items-center justify-between gap-2 pt-2">
                                                                 <Badge variant="outline">
                                                                     {r.group}
                                                                 </Badge>
@@ -1675,6 +1866,10 @@ export default function FlowsNew({
                                 hasBlockingPendency={hasBlockingPendency}
                                 financialPendency={financialPendency}
                                 dossierUrl={dossierUrl}
+                                contextTab={intakeContextTab}
+                                onContextTabChange={setIntakeContextTab}
+                                selectedRequirement={selectedCatalogRequirement}
+                                onStartRequirement={startRequirement}
                             />
                         </ResizablePanel>
                     </ResizablePanelGroup>
@@ -1692,6 +1887,10 @@ export default function FlowsNew({
                             hasBlockingPendency={hasBlockingPendency}
                             financialPendency={financialPendency}
                             dossierUrl={dossierUrl}
+                            contextTab={intakeContextTab}
+                            onContextTabChange={setIntakeContextTab}
+                            selectedRequirement={selectedCatalogRequirement}
+                            onStartRequirement={startRequirement}
                         />
                     </div>
                 )}
