@@ -39,7 +39,7 @@ type Props = {
 
 /**
  * Gera um avatar fake online determinístico para o utilizador quando este
- * não tem foto carregada. Usa o DiceBear (SVG, sem chave), seeded pelo id ou
+ * não tem foto carregada. Usa o i.pravatar.cc (sem chave), seeded pelo id ou
  * e-mail para manter o mesmo rosto entre navegações.
  */
 function buildFakeUserAvatar(user: User | null): string | null {
@@ -51,7 +51,7 @@ function buildFakeUserAvatar(user: User | null): string | null {
     }
     const seed = encodeURIComponent(String(user.id ?? user.email ?? user.name ?? 'guest'));
 
-    return `https://api.dicebear.com/7.x/avataaars/svg?seed=${seed}&backgroundType=gradientLinear&radius=50`;
+    return `https://i.pravatar.cc/150?u=${seed}`;
 }
 
 type TransitionMessage = {
@@ -634,7 +634,7 @@ export function ChatbotRenderer({
                                 >
                                     <div
                                         className={cn(
-                                            'relative rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed shadow-sm',
+                                            'relative rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed',
                                             isAssistant
                                                 ? cn(
                                                       'border border-border/60 bg-card text-card-foreground',
@@ -708,7 +708,7 @@ export function ChatbotRenderer({
 
                     {sending || advancing ? (
                         <div className="mt-4 flex justify-start gap-2.5 pl-11">
-                            <div className="flex items-center gap-2 rounded-2xl border border-border/60 bg-card px-3 py-2 text-xs text-muted-foreground shadow-sm">
+                            <div className="flex items-center gap-2 rounded-2xl border border-border/60 bg-card px-3 py-2 text-xs text-muted-foreground">
                                 <Spinner className="size-3.5" />
                                 {advancing ? 'A avançar para a próxima etapa…' : 'A processar…'}
                             </div>
