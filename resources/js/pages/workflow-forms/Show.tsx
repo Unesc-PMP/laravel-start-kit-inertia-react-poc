@@ -1,42 +1,36 @@
-import { Head, Link, useForm, type InertiaFormProps } from '@inertiajs/react';
-import {
-    ArrowRight,
-    ArrowRightLeft,
-    Check,
-    Clock,
-    FilePenLine,
-    GraduationCap,
-    ListTree,
-    MessageSquare,
-    ScrollText,
-    Sparkles,
-    type LucideIcon,
-} from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { Head, router, useForm, usePage, type InertiaFormProps } from '@inertiajs/react';
+import { Clock, ListTree, MessageSquare, ScrollText, Sparkles, type LucideIcon } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useDefaultLayout } from 'react-resizable-panels';
-import InputError from '@/components/input-error';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import type { SharedData } from '@/types/page';
 import {
     ResizableHandle,
     ResizablePanel,
     ResizablePanelGroup,
 } from '@/components/ui/resizable';
 import { Separator } from '@/components/ui/separator';
-import { Spinner } from '@/components/ui/spinner';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import AppLayout from '@/layouts/app-layout';
 import { cn } from '@/lib/utils';
 import { dashboard } from '@/routes';
-import {
-    show as workflowFormShow,
-    submit as workflowFormSubmit,
-} from '@/routes/workflow-forms';
 import type { BreadcrumbItem } from '@/types';
+import { mergeInitialData } from './form-helpers';
+import { AiCopilotTab } from './progress/AiCopilotTab';
+import { RendererToggle, RendererToggleLabel } from './RendererToggle';
+import { ChatbotRenderer } from './renderers/ChatbotRenderer';
+import type { StepRendererProps } from './renderers/types';
+import { WizardRenderer } from './renderers/WizardRenderer';
+import type {
+    ChatMessage,
+    ProgressPayload,
+    ProgressSideTabId,
+    ProgressStep,
+    Step,
+    TimelineHeadingRow,
+    TimelineStepRow,
+} from './types';
 
 const MIN_PROGRESS_PANEL_PX = 280;
 
@@ -67,8 +61,6 @@ const ssrSafeLocalStorage = {
     },
 } as const;
 
-type ProgressSideTabId = 'details' | 'activities' | 'ai';
-
 const PROGRESS_SIDE_TABS: {
     id: ProgressSideTabId;
     label: string;
@@ -76,64 +68,8 @@ const PROGRESS_SIDE_TABS: {
 }[] = [
     { id: 'details', label: 'Detalhes', icon: ListTree },
     { id: 'activities', label: 'Atividades', icon: MessageSquare },
-    { id: 'ai', label: 'IA', icon: Sparkles },
+    { id: 'copilot', label: 'Assistente IA', icon: Sparkles },
 ];
-
-const CHOICE_ICON_MAP: Record<string, LucideIcon> = {
-    ScrollText,
-    GraduationCap,
-    FilePenLine,
-    ArrowRightLeft,
-};
-
-type ChoiceCardDef = {
-    value: string;
-    label: string;
-    description?: string;
-    icon?: string;
-};
-
-type FormField = {
-    key: string;
-    label: string;
-    type: string;
-    required?: boolean;
-    placeholder?: string;
-    options?: string;
-    choices?: ChoiceCardDef[];
-};
-
-type Step = {
-    title: string;
-    description?: string | null;
-    submit_label: string;
-    fields: FormField[];
-};
-
-type ProgressStep = {
-    node_id: number;
-    label: string;
-    node_key: string;
-    state: 'completed' | 'current' | 'pending';
-    completed_at: string | null;
-    summary_lines: string[];
-    description?: string | null;
-    actor_name?: string | null;
-};
-
-type ProgressPayload = {
-    workflow_name: string;
-    workflow_description?: string | null;
-    steps: ProgressStep[];
-};
-
-type TimelineHeadingRow = { type: 'heading'; title: string; reactKey: string };
-type TimelineStepRow = {
-    type: 'step';
-    step: ProgressStep;
-    displayIndex: number;
-    reactKey: string;
-};
 
 type Props = {
     token: string;
@@ -142,102 +78,11 @@ type Props = {
     prefill: Record<string, unknown>;
     previous_token: string | null;
     progress: ProgressPayload;
+    preferences: { workflow_form_renderer: 'wizard' | 'chatbot' };
+    conversation: { id: number; messages: ChatMessage[] };
+    workflow_form_ai_extract_available: boolean;
+    workflow_form_copilot_available: boolean;
 };
-
-function normalizeChoices(raw: unknown): ChoiceCardDef[] {
-    if (!Array.isArray(raw)) {
-        return [];
-    }
-    const out: ChoiceCardDef[] = [];
-    for (const row of raw) {
-        if (!row || typeof row !== 'object') {
-            continue;
-        }
-        const r = row as Record<string, unknown>;
-        const value = r.value;
-        const label = r.label;
-        if (typeof value !== 'string' || typeof label !== 'string') {
-            continue;
-        }
-        out.push({
-            value,
-            label,
-            description:
-                typeof r.description === 'string' ? r.description : undefined,
-            icon: typeof r.icon === 'string' ? r.icon : undefined,
-        });
-    }
-
-    return out;
-}
-
-function buildInitialData(
-    fields: FormField[],
-): Record<string, string | boolean | number> {
-    const data: Record<string, string | boolean | number> = {};
-    for (const f of fields) {
-        if (f.type === 'boolean') {
-            data[f.key] = false;
-        } else if (f.type === 'number') {
-            data[f.key] = '';
-        } else {
-            data[f.key] = '';
-        }
-    }
-
-    return data;
-}
-
-function mergeInitialData(
-    fields: FormField[],
-    prefill: Record<string, unknown>,
-): Record<string, string | boolean | number> {
-    const data = buildInitialData(fields);
-    for (const f of fields) {
-        if (!Object.prototype.hasOwnProperty.call(prefill, f.key)) {
-            continue;
-        }
-        const v = prefill[f.key];
-        if (f.type === 'boolean') {
-            data[f.key] = v === true || v === 1 || v === '1' || v === 'true';
-        } else if (f.type === 'number') {
-            if (typeof v === 'number' && !Number.isNaN(v)) {
-                data[f.key] = v;
-            } else if (typeof v === 'string' && v !== '') {
-                data[f.key] = Number(v);
-            }
-        } else {
-            data[f.key] = v == null ? '' : String(v);
-        }
-    }
-
-    return data;
-}
-
-function parseSelectOptions(csv?: string): string[] {
-    if (!csv) {
-        return [];
-    }
-
-    return csv
-        .split(',')
-        .map((s) => s.trim())
-        .filter(Boolean);
-}
-
-function formatWhen(iso: string | null): string {
-    if (!iso) {
-        return '';
-    }
-    try {
-        return new Intl.DateTimeFormat('pt-PT', {
-            dateStyle: 'short',
-            timeStyle: 'short',
-        }).format(new Date(iso));
-    } catch {
-        return iso;
-    }
-}
 
 function formatTimeOnly(iso: string | null): string {
     if (!iso) {
@@ -375,144 +220,22 @@ function stepPrimaryDescription(s: ProgressStep): string | null {
 
 function stepSecondaryHint(s: ProgressStep): string | null {
     if (s.state === 'current') {
-        return 'Preencha o formulário à esquerda e utilize o botão de envio para avançar.';
+        return 'Preencha o formulário e utilize o botão de envio para avançar.';
     }
 
     return null;
 }
 
-function FormStepsSegmentBar({
-    progress,
-    step,
-}: {
-    progress: ProgressPayload;
-    step: Step;
-}) {
-    const formSteps = useMemo(
-        () => progress.steps.filter((s) => s.node_key === 'form_step'),
-        [progress.steps],
-    );
-    const currentIdx = formSteps.findIndex((s) => s.state === 'current');
-    const total = formSteps.length;
-
-    if (total < 2 || currentIdx < 0) {
-        return null;
-    }
-
-    const tag = step.title.replace(/\.$/, '').toUpperCase();
-
-    return (
-        <div className="space-y-2">
-            <div className="flex gap-1" role="presentation">
-                {Array.from({ length: total }, (_, i) => (
-                    <div
-                        key={i}
-                        className={cn(
-                            'h-1 min-w-0 flex-1 rounded-full transition-colors',
-                            i <= currentIdx ? 'bg-foreground' : 'bg-muted',
-                        )}
-                    />
-                ))}
-            </div>
-            <p className="text-[10px] font-medium tracking-wider text-muted-foreground">
-                ETAPA {currentIdx + 1} DE {total} · {tag}
-            </p>
-        </div>
-    );
-}
-
-function ChoiceCardsField({
-    field,
-    value,
-    onChange,
-    error,
-}: {
-    field: FormField;
-    value: string;
-    onChange: (v: string) => void;
-    error?: string;
-}) {
-    const choices = normalizeChoices(field.choices);
-
-    return (
-        <fieldset className="grid gap-3">
-            <legend className="sr-only">{field.label}</legend>
-            <div
-                className="grid gap-3"
-                role="radiogroup"
-                aria-label={field.label}
-            >
-                {choices.map((choice) => {
-                    const selected = value === choice.value;
-                    const Icon =
-                        (choice.icon && CHOICE_ICON_MAP[choice.icon]) ||
-                        ScrollText;
-
-                    return (
-                        <button
-                            key={choice.value}
-                            type="button"
-                            role="radio"
-                            aria-checked={selected}
-                            onClick={() => {
-                                onChange(choice.value);
-                            }}
-                            className={cn(
-                                'flex w-full items-start gap-4 rounded-xl border-2 border-input p-4 text-left transition-colors',
-                                'hover:bg-muted/40 focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none',
-                                selected
-                                    ? 'border-foreground bg-muted/20'
-                                    : 'border-border bg-background',
-                            )}
-                        >
-                            <span
-                                className={cn(
-                                    'flex size-12 shrink-0 items-center justify-center rounded-lg',
-                                    selected
-                                        ? 'bg-foreground text-background'
-                                        : 'bg-muted text-foreground',
-                                )}
-                            >
-                                <Icon className="size-5" aria-hidden />
-                            </span>
-                            <span className="min-w-0 flex-1">
-                                <span className="block font-semibold">
-                                    {choice.label}
-                                </span>
-                                {choice.description ? (
-                                    <span className="mt-0.5 block text-sm leading-snug text-muted-foreground">
-                                        {choice.description}
-                                    </span>
-                                ) : null}
-                            </span>
-                            <span className="flex shrink-0 items-center pt-0.5">
-                                {selected ? (
-                                    <span className="flex size-7 items-center justify-center rounded-full bg-foreground text-background">
-                                        <Check
-                                            className="size-4"
-                                            strokeWidth={2.5}
-                                            aria-hidden
-                                        />
-                                    </span>
-                                ) : (
-                                    <span className="size-7 rounded-full border-2 border-dashed border-input opacity-40" />
-                                )}
-                            </span>
-                        </button>
-                    );
-                })}
-            </div>
-            <InputError message={error} />
-        </fieldset>
-    );
-}
-
 function ProgressPanel({
     progress,
     run_id,
+    formToken,
+    copilotAvailable,
 }: {
     progress: ProgressPayload;
     run_id: number;
+    formToken: string;
+    copilotAvailable: boolean;
 }) {
     const [scope, setScope] = useState<'all' | 'forms'>('all');
     const [progressTab, setProgressTab] =
@@ -869,17 +592,11 @@ function ProgressPanel({
                         </p>
                     </div>
                 ) : null}
-                {progressTab === 'ai' ? (
-                    <div className="flex flex-1 flex-col items-center justify-center gap-3 px-2 py-12 text-center text-muted-foreground">
-                        <Sparkles
-                            className="size-10 text-muted-foreground/35"
-                            strokeWidth={1.25}
-                            aria-hidden
-                        />
-                        <p className="text-sm leading-relaxed">
-                            Assistente de IA neste painel — em breve.
-                        </p>
-                    </div>
+                {progressTab === 'copilot' ? (
+                    <AiCopilotTab
+                        token={formToken}
+                        available={copilotAvailable}
+                    />
                 ) : null}
             </div>
 
@@ -935,209 +652,18 @@ function ProgressPanel({
     );
 }
 
-type WorkflowFormPrimaryColumnProps = {
+export type ChatAdvancePayload = {
     token: string;
     step: Step;
     run_id: number;
-    progress: ProgressPayload;
+    prefill: Record<string, unknown>;
     previous_token: string | null;
-    form: InertiaFormProps<Record<string, unknown>>;
-    hasChoiceCards: boolean;
+    progress: ProgressPayload;
+    conversation: { id: number; messages: ChatMessage[] };
 };
 
-function WorkflowFormPrimaryColumn({
-    token,
-    step,
-    run_id,
-    progress,
-    previous_token,
-    form,
-    hasChoiceCards,
-}: WorkflowFormPrimaryColumnProps) {
-    return (
-        <div className="scrollbar-discrete flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-y-auto p-4 lg:px-8 lg:py-6">
-            <div className="w-full max-w-none space-y-6">
-                <FormStepsSegmentBar progress={progress} step={step} />
-                <div>
-                    <h1 className="text-2xl font-semibold tracking-tight">
-                        {step.title}
-                    </h1>
-                    {step.description ? (
-                        <p className="mt-2 text-sm whitespace-pre-wrap text-muted-foreground">
-                            {String(step.description)}
-                        </p>
-                    ) : null}
-                    <p className="mt-1 text-xs text-muted-foreground">
-                        Execução #{run_id}
-                    </p>
-                </div>
-
-                <form
-                    className="space-y-4"
-                    onSubmit={(e) => {
-                        e.preventDefault();
-                        form.post(workflowFormSubmit.url(token));
-                    }}
-                >
-                    {step.fields.map((field) => (
-                        <div
-                            key={field.key}
-                            className={cn(
-                                'grid gap-2',
-                                field.type === 'choice_cards' && 'gap-3',
-                            )}
-                        >
-                            {field.type === 'choice_cards' ? null : (
-                                <Label htmlFor={field.key}>{field.label}</Label>
-                            )}
-                            {field.type === 'choice_cards' ? (
-                                <ChoiceCardsField
-                                    field={{
-                                        ...field,
-                                        choices: normalizeChoices(
-                                            field.choices,
-                                        ),
-                                    }}
-                                    value={String(form.data[field.key] ?? '')}
-                                    onChange={(v) => form.setData(field.key, v)}
-                                    error={form.errors[field.key]}
-                                />
-                            ) : null}
-                            {field.type === 'textarea' ? (
-                                <textarea
-                                    id={field.key}
-                                    name={field.key}
-                                    required={Boolean(field.required)}
-                                    placeholder={field.placeholder}
-                                    className={cn(
-                                        'flex min-h-[100px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-base shadow-xs outline-none placeholder:text-muted-foreground md:text-sm',
-                                        'focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50',
-                                    )}
-                                    value={String(form.data[field.key] ?? '')}
-                                    onChange={(e) =>
-                                        form.setData(field.key, e.target.value)
-                                    }
-                                />
-                            ) : null}
-                            {field.type === 'string' ||
-                            field.type === 'email' ? (
-                                <Input
-                                    id={field.key}
-                                    name={field.key}
-                                    type={
-                                        field.type === 'email'
-                                            ? 'email'
-                                            : 'text'
-                                    }
-                                    required={Boolean(field.required)}
-                                    placeholder={field.placeholder}
-                                    value={String(form.data[field.key] ?? '')}
-                                    onChange={(e) =>
-                                        form.setData(field.key, e.target.value)
-                                    }
-                                />
-                            ) : null}
-                            {field.type === 'number' ? (
-                                <Input
-                                    id={field.key}
-                                    name={field.key}
-                                    type="number"
-                                    required={Boolean(field.required)}
-                                    placeholder={field.placeholder}
-                                    value={
-                                        form.data[field.key] === ''
-                                            ? ''
-                                            : String(form.data[field.key] ?? '')
-                                    }
-                                    onChange={(e) =>
-                                        form.setData(
-                                            field.key,
-                                            e.target.value === ''
-                                                ? ''
-                                                : Number(e.target.value),
-                                        )
-                                    }
-                                />
-                            ) : null}
-                            {field.type === 'boolean' ? (
-                                <div className="flex items-center gap-2">
-                                    <Checkbox
-                                        id={field.key}
-                                        checked={Boolean(form.data[field.key])}
-                                        onCheckedChange={(v) =>
-                                            form.setData(field.key, v === true)
-                                        }
-                                    />
-                                </div>
-                            ) : null}
-                            {field.type === 'select' ? (
-                                <select
-                                    id={field.key}
-                                    name={field.key}
-                                    required={Boolean(field.required)}
-                                    className={cn(
-                                        'flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs outline-none',
-                                        'focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50',
-                                    )}
-                                    value={String(form.data[field.key] ?? '')}
-                                    onChange={(e) =>
-                                        form.setData(field.key, e.target.value)
-                                    }
-                                >
-                                    <option value="">—</option>
-                                    {parseSelectOptions(field.options).map(
-                                        (opt) => (
-                                            <option key={opt} value={opt}>
-                                                {opt}
-                                            </option>
-                                        ),
-                                    )}
-                                </select>
-                            ) : null}
-                            {field.type === 'choice_cards' ? null : (
-                                <InputError message={form.errors[field.key]} />
-                            )}
-                        </div>
-                    ))}
-
-                    <div
-                        className={cn(
-                            'flex flex-wrap items-center gap-3 pt-1',
-                            previous_token
-                                ? 'w-full justify-between'
-                                : 'w-full justify-end',
-                        )}
-                    >
-                        {previous_token ? (
-                            <Button variant="outline" type="button" asChild>
-                                <Link
-                                    href={workflowFormShow.url(previous_token)}
-                                    prefetch={false}
-                                >
-                                    Voltar
-                                </Link>
-                            </Button>
-                        ) : null}
-                        <Button
-                            type="submit"
-                            disabled={form.processing}
-                            className="min-w-[8rem] gap-2"
-                        >
-                            {form.processing && <Spinner />}
-                            {step.submit_label}
-                            {hasChoiceCards ? (
-                                <ArrowRight className="size-4" aria-hidden />
-                            ) : null}
-                        </Button>
-                    </div>
-                </form>
-            </div>
-        </div>
-    );
-}
-
 export default function WorkflowFormShow(props: Props) {
-    return <WorkflowFormShowInner key={props.token} {...props} />;
+    return <WorkflowFormShowInner {...props} />;
 }
 
 function WorkflowFormShowInner({
@@ -1147,22 +673,85 @@ function WorkflowFormShowInner({
     prefill,
     previous_token,
     progress,
+    preferences,
+    conversation,
+    workflow_form_ai_extract_available,
+    workflow_form_copilot_available,
 }: Props) {
+    const { auth } = usePage<SharedData>().props;
+
+    const [activeToken, setActiveToken] = useState(token);
+    const [activeStep, setActiveStep] = useState(step);
+    const [activeRunId, setActiveRunId] = useState(run_id);
+    const [activePrefill, setActivePrefill] = useState(prefill);
+    const [activePreviousToken, setActivePreviousToken] = useState(previous_token);
+    const [activeProgress, setActiveProgress] = useState(progress);
+    const [activeConversation, setActiveConversation] = useState(conversation);
+
+    useEffect(() => {
+        setActiveToken(token);
+        setActiveStep(step);
+        setActiveRunId(run_id);
+        setActivePrefill(prefill);
+        setActivePreviousToken(previous_token);
+        setActiveProgress(progress);
+        setActiveConversation(conversation);
+    }, [token]);
+
     const breadcrumbs: BreadcrumbItem[] = useMemo(
         () => [
             { title: 'Dashboard', href: dashboard() },
-            { title: step.title, href: '#' },
+            { title: activeStep.title, href: '#' },
         ],
-        [step.title],
+        [activeStep.title],
     );
 
-    const form = useForm(mergeInitialData(step.fields, prefill));
-    const hasChoiceCards = step.fields.some((f) => f.type === 'choice_cards');
+    const form = useForm(mergeInitialData(activeStep.fields, activePrefill));
+    const hasChoiceCards = activeStep.fields.some((f) => f.type === 'choice_cards');
+
+    const [renderer, setRenderer] = useState<
+        'wizard' | 'chatbot'
+    >(preferences.workflow_form_renderer);
 
     const [lgUp, setLgUp] = useState(
         () =>
             typeof window !== 'undefined' &&
             window.matchMedia('(min-width: 1024px)').matches,
+    );
+
+    useEffect(() => {
+        setRenderer(preferences.workflow_form_renderer);
+    }, [preferences.workflow_form_renderer, activeToken]);
+
+    const handleChatAdvance = useCallback(
+        (next: ChatAdvancePayload) => {
+            setActiveToken(next.token);
+            setActiveStep(next.step);
+            setActiveRunId(next.run_id);
+            setActivePrefill(next.prefill);
+            setActivePreviousToken(next.previous_token);
+            setActiveProgress(next.progress);
+            setActiveConversation(next.conversation);
+            if (typeof window !== 'undefined' && window.history?.replaceState) {
+                try {
+                    window.history.replaceState(
+                        window.history.state,
+                        '',
+                        `/workflow-forms/${next.token}`,
+                    );
+                } catch {
+                    /* ignore */
+                }
+            }
+        },
+        [],
+    );
+
+    const handleWorkflowComplete = useCallback(
+        (redirectUrl: string) => {
+            router.visit(redirectUrl);
+        },
+        [],
     );
 
     useEffect(() => {
@@ -1184,19 +773,49 @@ function WorkflowFormShowInner({
         storage: ssrSafeLocalStorage,
     });
 
-    const formColumnProps: WorkflowFormPrimaryColumnProps = {
-        token,
-        step,
-        run_id,
-        progress,
-        previous_token,
+    const wizardProps: StepRendererProps = {
+        token: activeToken,
+        step: activeStep,
+        run_id: activeRunId,
+        progress: activeProgress,
+        previous_token: activePreviousToken,
         form: form as InertiaFormProps<Record<string, unknown>>,
         hasChoiceCards,
     };
 
+    const primaryColumn = (
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+            <div className="shrink-0 border-b border-border bg-muted/20 px-4 py-3 lg:px-8">
+                <RendererToggleLabel className="mb-2" />
+                <RendererToggle value={renderer} onChange={setRenderer} />
+            </div>
+            <div className="min-h-0 flex-1">
+                {renderer === 'wizard' ? (
+                    <WizardRenderer key={activeToken} {...wizardProps} />
+                ) : (
+                    <ChatbotRenderer
+                        token={activeToken}
+                        step={activeStep}
+                        run_id={activeRunId}
+                        previous_token={activePreviousToken}
+                        prefill={activePrefill}
+                        initialMessages={activeConversation.messages}
+                        aiExtractAvailable={
+                            workflow_form_ai_extract_available
+                        }
+                        user={auth.user}
+                        workflowName={activeProgress?.workflow_name ?? null}
+                        onAdvance={handleChatAdvance}
+                        onComplete={handleWorkflowComplete}
+                    />
+                )}
+            </div>
+        </div>
+    );
+
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
-            <Head title={step.title} />
+            <Head title={activeStep.title} />
             <div className="flex min-h-0 flex-1 flex-col lg:max-h-[calc(100svh-4rem-var(--impersonation-banner-offset,0px))] lg:min-h-0">
                 {lgUp ? (
                     <ResizablePanelGroup
@@ -1210,7 +829,7 @@ function WorkflowFormShowInner({
                             className="flex min-h-0 min-w-0"
                             minSize="24%"
                         >
-                            <WorkflowFormPrimaryColumn {...formColumnProps} />
+                            {primaryColumn}
                         </ResizablePanel>
                         <ResizableHandle
                             withHandle
@@ -1224,15 +843,26 @@ function WorkflowFormShowInner({
                             maxSize={`${MAX_PROGRESS_PANEL_PX}px`}
                         >
                             <ProgressPanel
-                                progress={progress}
-                                run_id={run_id}
+                                progress={activeProgress}
+                                run_id={activeRunId}
+                                formToken={activeToken}
+                                copilotAvailable={
+                                    workflow_form_copilot_available
+                                }
                             />
                         </ResizablePanel>
                     </ResizablePanelGroup>
                 ) : (
                     <div className="flex min-h-0 flex-1 flex-col">
-                        <WorkflowFormPrimaryColumn {...formColumnProps} />
-                        <ProgressPanel progress={progress} run_id={run_id} />
+                        {primaryColumn}
+                        <ProgressPanel
+                            progress={activeProgress}
+                            run_id={activeRunId}
+                            formToken={activeToken}
+                            copilotAvailable={
+                                workflow_form_copilot_available
+                            }
+                        />
                     </div>
                 )}
             </div>
