@@ -30,6 +30,7 @@ use Laravel\Fortify\TwoFactorAuthenticatable;
  * @property-read CarbonInterface $created_at
  * @property-read CarbonInterface $updated_at
  * @property-read bool $is_admin
+ * @property-read array<string, mixed>|null $preferences
  */
 #[Hidden([
     'password',
@@ -71,6 +72,7 @@ final class User extends Authenticatable implements MustVerifyEmail, Otpable
             'created_at' => 'datetime',
             'updated_at' => 'datetime',
             'is_admin' => 'boolean',
+            'preferences' => 'array',
         ];
     }
 }
