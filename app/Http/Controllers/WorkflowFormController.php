@@ -8,25 +8,63 @@ use Aftandilmmd\WorkflowAutomation\Enums\NodeRunStatus;
 use Aftandilmmd\WorkflowAutomation\Enums\RunStatus;
 use Aftandilmmd\WorkflowAutomation\Models\WorkflowNodeRun;
 use Aftandilmmd\WorkflowAutomation\Services\WorkflowService;
+use App\Models\User;
+use App\Models\WorkflowFormConversation;
+use App\Services\Workflow\AiCopilotService;
+use App\Services\Workflow\AiFieldExtractor;
+use App\Services\Workflow\ScriptedChatService;
+use App\Support\WorkflowFormFieldRules;
 use App\Support\WorkflowFormProgress;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
+use Throwable;
 
 final class WorkflowFormController
 {
-    public function show(Request $request, string $token): Response
-    {
+    public function show(
+        Request $request,
+        string $token,
+        ScriptedChatService $scriptedChat,
+    ): Response {
+        $payload = $this->buildStepPayload($request, $token, $scriptedChat);
+
+        $user = $request->user();
+
+        return Inertia::render('workflow-forms/Show', array_merge($payload, [
+            'preferences' => [
+                'workflow_form_renderer' => $this->rendererPreference($user),
+            ],
+            'workflow_form_ai_extract_available' => app(AiFieldExtractor::class)->isAvailable(),
+            'workflow_form_copilot_available' => app(AiCopilotService::class)->isAvailable(),
+        ]));
+    }
+
+    /**
+     * Build the payload describing the current form step (token, step, prefill, progress, conversation).
+     *
+     * @return array<string, mixed>
+     */
+    private function buildStepPayload(
+        Request $request,
+        string $token,
+        ScriptedChatService $scriptedChat,
+    ): array {
         $nodeRun = $this->findWaitingFormNodeRunByToken($token);
 
         if ($nodeRun === null) {
             abort(404);
         }
 
-        $main = $nodeRun->output['main'][0] ?? [];
+        $run = $nodeRun->workflowRun;
+        Gate::authorize('view', $run);
 
+        $main = $nodeRun->output['main'][0] ?? [];
         $fields = is_array($main['fields'] ?? null) ? $main['fields'] : [];
 
         $step = [
@@ -36,14 +74,24 @@ final class WorkflowFormController
             'fields' => $fields,
         ];
 
-        $run = $nodeRun->workflowRun;
         $run->refresh();
         $workflow = $run->workflow()->with(['nodes', 'edges'])->firstOrFail();
 
         $viewerName = ($u = $request->user()) !== null ? mb_trim((string) $u->name) : '';
         $viewerDisplayName = $viewerName !== '' ? $viewerName : null;
 
-        return Inertia::render('workflow-forms/Show', [
+        $conversation = WorkflowFormConversation::query()->firstOrCreate(
+            [
+                'workflow_run_id' => $nodeRun->workflow_run_id,
+                'workflow_node_run_id' => $nodeRun->id,
+            ],
+            ['messages' => []],
+        );
+
+        $scriptedChat->ensureOpeningAssistant($conversation, $fields);
+        $conversation->refresh();
+
+        return [
             'token' => $token,
             'step' => $step,
             'run_id' => $nodeRun->workflow_run_id,
@@ -56,7 +104,11 @@ final class WorkflowFormController
                     : null,
                 'steps' => WorkflowFormProgress::timeline($run, $workflow, $nodeRun, $viewerDisplayName),
             ],
-        ]);
+            'conversation' => [
+                'id' => $conversation->id,
+                'messages' => $conversation->messages ?? [],
+            ],
+        ];
     }
 
     public function submit(Request $request, string $token, WorkflowService $workflowService): RedirectResponse
@@ -67,40 +119,16 @@ final class WorkflowFormController
             abort(404);
         }
 
+        Gate::authorize('view', $nodeRun->workflowRun);
+
         $main = $nodeRun->output['main'][0] ?? [];
         $fields = $main['fields'] ?? [];
-
-        $rules = [];
-        foreach ($fields as $field) {
-            if (! is_array($field) || ! isset($field['key'])) {
-                continue;
-            }
-
-            $key = (string) $field['key'];
-            $type = (string) ($field['type'] ?? 'string');
-            $required = filter_var($field['required'] ?? false, FILTER_VALIDATE_BOOLEAN);
-
-            $fieldRules = [];
-            if ($required) {
-                $fieldRules[] = 'required';
-            } else {
-                $fieldRules[] = 'nullable';
-            }
-
-            $fieldRules = match ($type) {
-                'email' => array_merge($fieldRules, ['string', 'email']),
-                'number' => array_merge($fieldRules, ['numeric']),
-                'boolean' => $required
-                    ? ['accepted']
-                    : array_merge($fieldRules, ['boolean']),
-                'textarea', 'string' => array_merge($fieldRules, ['string']),
-                'select' => $this->rulesForSelect($fieldRules, $field),
-                'choice_cards' => $this->rulesForChoiceCards($fieldRules, $field),
-                default => array_merge($fieldRules, ['string']),
-            };
-
-            $rules[$key] = $fieldRules;
+        if (! is_array($fields)) {
+            $fields = [];
         }
+
+        /** @var array<string, list<string>> $rules */
+        $rules = WorkflowFormFieldRules::rulesForSubmit($fields);
 
         $validated = $request->validate($rules);
 
@@ -139,6 +167,236 @@ final class WorkflowFormController
             ->with('flows_success', 'Fluxo concluído. A execução aparece na listagem abaixo.');
     }
 
+    /**
+     * JSON variant of {@see submit()} used by the chatbot renderer so the whole flow happens
+     * inside the same conversation without page reloads. Returns either the next form step
+     * payload or a completion signal.
+     */
+    public function submitChat(
+        Request $request,
+        string $token,
+        WorkflowService $workflowService,
+        ScriptedChatService $scriptedChat,
+    ): JsonResponse {
+        $nodeRun = $this->findWaitingFormNodeRunByToken($token);
+
+        if ($nodeRun === null) {
+            abort(404);
+        }
+
+        Gate::authorize('view', $nodeRun->workflowRun);
+
+        $main = $nodeRun->output['main'][0] ?? [];
+        $fields = $main['fields'] ?? [];
+        if (! is_array($fields)) {
+            $fields = [];
+        }
+
+        /** @var array<string, list<string>> $rules */
+        $rules = WorkflowFormFieldRules::rulesForSubmit($fields);
+        $validated = $request->validate($rules);
+
+        $payload = $validated;
+        $actor = $request->user();
+        if ($actor !== null) {
+            $payload['_submitted_by_id'] = (string) $actor->getKey();
+            $name = mb_trim((string) $actor->name);
+            if ($name !== '') {
+                $payload['_submitted_by_name'] = $name;
+            }
+        }
+
+        $run = $nodeRun->workflowRun;
+        $run = $workflowService->resume($run, $token, $payload);
+        $run->refresh();
+
+        $completedStep = [
+            'title' => (string) ($main['title'] ?? ''),
+            'submit_label' => (string) ($main['submit_label'] ?? 'Continuar'),
+        ];
+
+        if ($run->isWaiting()) {
+            $latest = $run->nodeRuns()
+                ->where('status', NodeRunStatus::Completed)
+                ->orderByDesc('id')
+                ->get()
+                ->first(static function (WorkflowNodeRun $nr): bool {
+                    return isset($nr->output['main'][0]['resume_token']);
+                });
+
+            $nextToken = $latest?->output['main'][0]['resume_token'] ?? null;
+
+            if (is_string($nextToken) && $nextToken !== $token) {
+                $nextPayload = $this->buildStepPayload($request, $nextToken, $scriptedChat);
+
+                return response()->json([
+                    'done' => false,
+                    'completed_step' => $completedStep,
+                    'next' => $nextPayload,
+                ]);
+            }
+        }
+
+        return response()->json([
+            'done' => true,
+            'completed_step' => $completedStep,
+            'redirect_url' => route('flows.index'),
+            'message' => 'Fluxo concluído. A execução aparece na listagem.',
+        ]);
+    }
+
+    public function preferences(Request $request): RedirectResponse|JsonResponse
+    {
+        $validated = $request->validate([
+            'workflow_form_renderer' => ['required', Rule::in(['wizard', 'chatbot'])],
+        ]);
+
+        $user = $request->user();
+        abort_if($user === null, 403);
+
+        $json = DB::table((new User)->getTable())
+            ->where('id', $user->getKey())
+            ->value('preferences');
+
+        $existing = [];
+        if ($json !== null && $json !== '') {
+            $decoded = is_string($json) ? json_decode($json, true) : $json;
+            $existing = is_array($decoded) ? $decoded : [];
+        }
+
+        if (! is_array($existing)) {
+            $existing = [];
+        }
+
+        $existing['workflow_form_renderer'] = $validated['workflow_form_renderer'];
+        $prefs = $existing;
+
+        $user->forceFill(['preferences' => $prefs])->save();
+
+        if ($request->wantsJson()) {
+            return response()->json([
+                'preferences' => [
+                    'workflow_form_renderer' => $prefs['workflow_form_renderer'],
+                ],
+            ]);
+        }
+
+        return back();
+    }
+
+    public function chat(
+        Request $request,
+        string $token,
+        ScriptedChatService $scriptedChat,
+    ): JsonResponse {
+        $nodeRun = $this->findWaitingFormNodeRunByToken($token);
+        if ($nodeRun === null) {
+            abort(404);
+        }
+
+        Gate::authorize('view', $nodeRun->workflowRun);
+
+        $main = $nodeRun->output['main'][0] ?? [];
+        $fields = is_array($main['fields'] ?? null) ? $main['fields'] : [];
+
+        $validated = $request->validate([
+            'content' => ['nullable'],
+        ]);
+
+        $conversation = WorkflowFormConversation::query()->firstOrCreate(
+            [
+                'workflow_run_id' => $nodeRun->workflow_run_id,
+                'workflow_node_run_id' => $nodeRun->id,
+            ],
+            ['messages' => []],
+        );
+
+        $scriptedChat->ensureOpeningAssistant($conversation, $fields);
+        $conversation->refresh();
+
+        $result = $scriptedChat->appendUserMessage(
+            $conversation,
+            $fields,
+            $validated['content'] ?? null,
+        );
+
+        if (! $result['ok']) {
+            return response()->json(['errors' => $result['errors']], 422);
+        }
+
+        return response()->json([
+            'messages' => $result['messages'],
+            'ready_for_submit' => $scriptedChat->isReadyForSubmit($result['messages']),
+            'draft_values' => $scriptedChat->draftValuesFromMessages($fields, $result['messages']),
+        ]);
+    }
+
+    public function aiExtract(
+        Request $request,
+        string $token,
+        AiFieldExtractor $extractor,
+    ): JsonResponse {
+        $nodeRun = $this->findWaitingFormNodeRunByToken($token);
+        if ($nodeRun === null) {
+            abort(404);
+        }
+
+        Gate::authorize('view', $nodeRun->workflowRun);
+
+        if (! $extractor->isAvailable()) {
+            return response()->json(['message' => 'Extração por IA não está configurada.'], 503);
+        }
+
+        $main = $nodeRun->output['main'][0] ?? [];
+        $fields = is_array($main['fields'] ?? null) ? $main['fields'] : [];
+
+        $validated = $request->validate([
+            'free_text' => ['required', 'string', 'max:16000'],
+        ]);
+
+        try {
+            $values = $extractor->extract($fields, $validated['free_text']);
+        } catch (Throwable $e) {
+            report($e);
+
+            return response()->json(['message' => 'Falha ao extrair dados. Tenta de novo.'], 502);
+        }
+
+        return response()->json(['values' => $values]);
+    }
+
+    public function aiCopilot(
+        Request $request,
+        string $token,
+        AiCopilotService $copilot,
+    ): JsonResponse {
+        $nodeRun = $this->findWaitingFormNodeRunByToken($token);
+        if ($nodeRun === null) {
+            abort(404);
+        }
+
+        $run = $nodeRun->workflowRun;
+        Gate::authorize('view', $run);
+
+        if (! $copilot->isAvailable()) {
+            return response()->json(['message' => 'Assistente IA não está configurado.'], 503);
+        }
+
+        $validated = $request->validate([
+            'message' => ['required', 'string', 'max:4000'],
+        ]);
+
+        try {
+            $reply = $copilot->answer($run, $validated['message']);
+        } catch (Throwable $e) {
+            report($e);
+
+            return response()->json(['message' => 'Falha ao obter resposta. Tenta de novo.'], 502);
+        }
+
+        return response()->json(['reply' => $reply]);
+    }
+
     private function findWaitingFormNodeRunByToken(string $token): ?WorkflowNodeRun
     {
         return WorkflowNodeRun::query()
@@ -154,55 +412,27 @@ final class WorkflowFormController
             });
     }
 
-    /**
-     * @param  list<string>  $fieldRules
-     * @param  array<string, mixed>  $field
-     * @return list<string>
-     */
-    private function rulesForSelect(array $fieldRules, array $field): array
+    private function rendererPreference(?User $user): string
     {
-        $opts = $this->selectOptionsFromCsv($field['options'] ?? '');
-
-        if ($opts === []) {
-            return array_merge($fieldRules, ['string']);
+        if ($user === null) {
+            return 'wizard';
         }
 
-        return array_merge($fieldRules, ['string', Rule::in($opts)]);
-    }
+        $json = DB::table((new User)->getTable())
+            ->where('id', $user->getKey())
+            ->value('preferences');
 
-    /**
-     * @param  list<string>  $fieldRules
-     * @param  array<string, mixed>  $field
-     * @return list<string>
-     */
-    private function rulesForChoiceCards(array $fieldRules, array $field): array
-    {
-        $values = [];
-        $choices = $field['choices'] ?? [];
-        if (is_array($choices)) {
-            foreach ($choices as $row) {
-                if (is_array($row) && isset($row['value']) && is_string($row['value']) && $row['value'] !== '') {
-                    $values[] = $row['value'];
-                }
-            }
+        if ($json === null || $json === '') {
+            return 'wizard';
         }
 
-        if ($values === []) {
-            return array_merge($fieldRules, ['string']);
+        $decoded = is_string($json) ? json_decode($json, true) : $json;
+        if (! is_array($decoded)) {
+            return 'wizard';
         }
 
-        return array_merge($fieldRules, ['string', Rule::in($values)]);
-    }
+        $v = $decoded['workflow_form_renderer'] ?? null;
 
-    /**
-     * @return list<string>
-     */
-    private function selectOptionsFromCsv(mixed $csv): array
-    {
-        if (! is_string($csv) || $csv === '') {
-            return [];
-        }
-
-        return array_values(array_filter(array_map('trim', explode(',', $csv))));
+        return $v === 'chatbot' ? 'chatbot' : 'wizard';
     }
 }
