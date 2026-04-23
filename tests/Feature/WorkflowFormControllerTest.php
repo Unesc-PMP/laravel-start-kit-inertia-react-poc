@@ -5,6 +5,7 @@ declare(strict_types=1);
 use Aftandilmmd\WorkflowAutomation\Engine\GraphExecutor;
 use Aftandilmmd\WorkflowAutomation\Enums\RunStatus;
 use Aftandilmmd\WorkflowAutomation\Models\Workflow;
+use App\Flows\WorkflowStarterPayload;
 use App\Models\User;
 use Database\Seeders\WorkflowFormWizardExampleSeeder;
 
@@ -12,12 +13,11 @@ it('mostra o passo do formulário para um token válido', function (): void {
     $this->seed(WorkflowFormWizardExampleSeeder::class);
 
     $workflow = Workflow::query()->where('name', WorkflowFormWizardExampleSeeder::WORKFLOW_NAME)->firstOrFail();
-    $run = app(GraphExecutor::class)->execute($workflow, [[]]);
+    $user = User::factory()->create();
+    $run = app(GraphExecutor::class)->execute($workflow, WorkflowStarterPayload::forUser($user));
 
     $token = $run->nodeRuns()->orderByDesc('id')->first()?->output['main'][0]['resume_token'] ?? null;
     expect($token)->toBeString();
-
-    $user = User::factory()->create();
 
     $this->actingAs($user)
         ->get(route('workflow-forms.show', ['token' => $token]))
@@ -39,20 +39,23 @@ it('mostra o passo do formulário para um token válido', function (): void {
             ->where('progress.steps.1.description', 'Indique o nome e o e-mail.')
             ->where('progress.steps.1.actor_name', $user->name)
             ->where('previous_token', null)
-            ->where('prefill', []));
+            ->where('prefill', [])
+            ->where('preferences.workflow_form_renderer', 'wizard')
+            ->has('conversation.messages')
+            ->has('workflow_form_ai_extract_available')
+            ->has('workflow_form_copilot_available'));
 });
 
 it('no segundo passo expõe o token da etapa anterior e o prefill repõe dados ao voltar', function (): void {
     $this->seed(WorkflowFormWizardExampleSeeder::class);
 
+    $user = User::factory()->create();
     $run = app(GraphExecutor::class)->execute(
         Workflow::query()->where('name', WorkflowFormWizardExampleSeeder::WORKFLOW_NAME)->firstOrFail(),
-        [[]],
+        WorkflowStarterPayload::forUser($user),
     );
     $firstToken = $run->nodeRuns()->orderByDesc('id')->first()?->output['main'][0]['resume_token'];
     expect($firstToken)->toBeString();
-
-    $user = User::factory()->create();
 
     $first = $this->actingAs($user)
         ->post(route('workflow-forms.submit', ['token' => $firstToken]), [
@@ -86,11 +89,10 @@ it('submete os três passos do wizard e conclui o fluxo', function (): void {
     $this->seed(WorkflowFormWizardExampleSeeder::class);
 
     $workflow = Workflow::query()->where('name', WorkflowFormWizardExampleSeeder::WORKFLOW_NAME)->firstOrFail();
-    $run = app(GraphExecutor::class)->execute($workflow, [[]]);
+    $user = User::factory()->create();
+    $run = app(GraphExecutor::class)->execute($workflow, WorkflowStarterPayload::forUser($user));
     $firstToken = $run->nodeRuns()->orderByDesc('id')->first()?->output['main'][0]['resume_token'];
     expect($firstToken)->toBeString();
-
-    $user = User::factory()->create();
 
     $first = $this->actingAs($user)
         ->post(route('workflow-forms.submit', ['token' => $firstToken]), [
@@ -134,10 +136,9 @@ it('valida campos obrigatórios no submit', function (): void {
     $this->seed(WorkflowFormWizardExampleSeeder::class);
 
     $workflow = Workflow::query()->where('name', WorkflowFormWizardExampleSeeder::WORKFLOW_NAME)->firstOrFail();
-    $run = app(GraphExecutor::class)->execute($workflow, [[]]);
-    $token = $run->nodeRuns()->orderByDesc('id')->first()?->output['main'][0]['resume_token'];
-
     $user = User::factory()->create();
+    $run = app(GraphExecutor::class)->execute($workflow, WorkflowStarterPayload::forUser($user));
+    $token = $run->nodeRuns()->orderByDesc('id')->first()?->output['main'][0]['resume_token'];
 
     $this->actingAs($user)
         ->post(route('workflow-forms.submit', ['token' => $token]), [])
@@ -148,11 +149,10 @@ it('valida choice_cards com valor fora das opções', function (): void {
     $this->seed(WorkflowFormWizardExampleSeeder::class);
 
     $workflow = Workflow::query()->where('name', WorkflowFormWizardExampleSeeder::WORKFLOW_NAME)->firstOrFail();
-    $run = app(GraphExecutor::class)->execute($workflow, [[]]);
+    $user = User::factory()->create();
+    $run = app(GraphExecutor::class)->execute($workflow, WorkflowStarterPayload::forUser($user));
     $firstToken = $run->nodeRuns()->orderByDesc('id')->first()?->output['main'][0]['resume_token'];
     expect($firstToken)->toBeString();
-
-    $user = User::factory()->create();
 
     $afterFirst = $this->actingAs($user)
         ->post(route('workflow-forms.submit', ['token' => $firstToken]), [
