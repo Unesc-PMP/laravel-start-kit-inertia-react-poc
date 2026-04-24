@@ -61,3 +61,9 @@ export type ChatMessage = {
     content: string;
     meta?: Record<string, unknown>;
 };
+
+/** Sincroniza rascunho do chat com o estado do ecrã principal (wizard / Inertia). */
+export type ChatDraftUpdatePayload = {
+    messages: ChatMessage[];
+    draftValues: Record<string, unknown>;
+};
