@@ -31,6 +31,9 @@ final class FormStepNode implements NodeInterface
                 ['key' => 'type', 'type' => 'select', 'label' => 'Tipo', 'required' => true, 'options' => ['string', 'textarea', 'email', 'boolean', 'number', 'select', 'choice_cards']],
                 ['key' => 'required', 'type' => 'boolean', 'label' => 'Obrigatório'],
                 ['key' => 'placeholder', 'type' => 'string', 'label' => 'Placeholder'],
+                ['key' => 'ask', 'type' => 'string', 'label' => 'Pergunta no chat (opcional)', 'required' => false],
+                ['key' => 'placeholder_question', 'type' => 'string', 'label' => 'Placeholder da pergunta (chat)', 'required' => false],
+                ['key' => 'confirm_label', 'type' => 'string', 'label' => 'Rótulo de confirmação (chat)', 'required' => false],
                 ['key' => 'options', 'type' => 'string', 'label' => 'Opções (CSV, apenas select)', 'required' => false],
                 ['key' => 'choices', 'type' => 'array_of_objects', 'label' => 'Cartões (apenas choice_cards)', 'required' => false, 'schema' => [
                     ['key' => 'value', 'type' => 'string', 'label' => 'Valor', 'required' => true],

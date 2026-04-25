@@ -89,10 +89,22 @@ Route::middleware(['auth', 'verified'])->group(function (): void {
     Route::get('users', [UserListController::class, 'index'])->name('users.index');
     Route::impersonate();
 
+    Route::patch('workflow-forms/preferences', [WorkflowFormController::class, 'preferences'])
+        ->name('workflow-forms.preferences');
     Route::get('workflow-forms/{token}', [WorkflowFormController::class, 'show'])
         ->name('workflow-forms.show');
     Route::post('workflow-forms/{token}', [WorkflowFormController::class, 'submit'])
         ->name('workflow-forms.submit');
+    Route::post('workflow-forms/{token}/submit-chat', [WorkflowFormController::class, 'submitChat'])
+        ->name('workflow-forms.submit-chat');
+    Route::post('workflow-forms/{token}/chat', [WorkflowFormController::class, 'chat'])
+        ->name('workflow-forms.chat');
+    Route::post('workflow-forms/{token}/chat/edit', [WorkflowFormController::class, 'edit'])
+        ->name('workflow-forms.chat.edit');
+    Route::post('workflow-forms/{token}/ai-extract', [WorkflowFormController::class, 'aiExtract'])
+        ->name('workflow-forms.ai-extract');
+    Route::post('workflow-forms/{token}/ai-copilot', [WorkflowFormController::class, 'aiCopilot'])
+        ->name('workflow-forms.ai-copilot');
 });
 
 Route::middleware('auth')->group(function (): void {
