@@ -43,7 +43,6 @@ it('mostra o passo do formulário para um token válido', function (): void {
             ->where('prefill', [])
             ->where('preferences.workflow_form_renderer', 'wizard')
             ->has('conversation.messages')
-            ->has('workflow_form_ai_extract_available')
             ->has('workflow_form_copilot_available'));
 });
 
@@ -89,7 +88,7 @@ it('no segundo passo o show Inertia inclui histórico de chat cumulativo da prim
     $messagesPayload = data_get($pageProps, 'props.conversation.messages');
 
     expect($messagesPayload)->toBeArray()->not->toBe([]);
-    $encoded = json_encode($messagesPayload, JSON_THROW_ON_ERROR);
+    $encoded = json_encode($messagesPayload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE);
     expect($encoded)->toContain('Ana Histórico Chat');
     expect($encoded)->toContain('ana.historico@example.com');
     expect(collect($messagesPayload)->pluck('role')->contains('system'))->toBeTrue();

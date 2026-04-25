@@ -1,5 +1,5 @@
 import { useForm } from '@inertiajs/react';
-import { CheckCircle2, ChevronDown, ChevronUp, Pencil, SendHorizonal, Sparkles, X } from 'lucide-react';
+import { CheckCircle2, Pencil, SendHorizonal, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -10,11 +10,7 @@ import { Spinner } from '@/components/ui/spinner';
 import { useInitials } from '@/hooks/use-initials';
 import { postJson } from '@/lib/workflow-form-api';
 import { cn } from '@/lib/utils';
-import {
-    aiExtract as aiExtractRoute,
-    chat as chatRoute,
-    submitChat as submitChatRoute,
-} from '@/routes/workflow-forms';
+import { chat as chatRoute, submitChat as submitChatRoute } from '@/routes/workflow-forms';
 import { edit as editChatRoute } from '@/routes/workflow-forms/chat';
 import type { User } from '@/types/auth';
 import type { ChatAdvancePayload } from '../Show';
@@ -58,7 +54,6 @@ type Props = {
     previous_token: string | null;
     prefill: Record<string, unknown>;
     initialMessages: ChatMessage[];
-    aiExtractAvailable: boolean;
     user: User | null;
     workflowName?: string | null;
     onAdvance: (next: ChatAdvancePayload) => void;
@@ -243,7 +238,6 @@ export function ChatbotRenderer({
     run_id,
     prefill,
     initialMessages,
-    aiExtractAvailable,
     user,
     workflowName,
     onAdvance,
@@ -272,9 +266,6 @@ export function ChatbotRenderer({
     const errorBubbleClearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const [sending, setSending] = useState(false);
     const [advancing, setAdvancing] = useState(false);
-    const [extractOpen, setExtractOpen] = useState(false);
-    const [extractText, setExtractText] = useState('');
-    const [extractBusy, setExtractBusy] = useState(false);
     // Estado da edição inline de respostas do utilizador (qualquer etapa no histórico cumulativo).
     const [editContext, setEditContext] = useState<ChatEditContext | null>(null);
     const [editInput, setEditInput] = useState('');
@@ -514,31 +505,6 @@ export function ChatbotRenderer({
         },
         [sendContent, sending],
     );
-
-    const runExtract = useCallback(async () => {
-        if (!extractText.trim()) {
-            return;
-        }
-        setExtractBusy(true);
-        clearChatError();
-        const res = await postJson<{ values: Record<string, unknown> }>(aiExtractRoute.url(token), {
-            free_text: extractText,
-        });
-        setExtractBusy(false);
-        if (!res.ok) {
-            const body = res.data as { message?: string };
-            raiseChatError(body.message ?? 'Extração falhou.', {
-                highlightAssistantBubble: false,
-            });
-
-            return;
-        }
-        for (const [k, v] of Object.entries(res.data.values ?? {})) {
-            form.setData(k, v as never);
-        }
-        setExtractOpen(false);
-        setExtractText('');
-    }, [clearChatError, extractText, form, raiseChatError, token]);
 
     const submitStep = useCallback(async () => {
         if (submitInFlight.current) {
@@ -947,54 +913,6 @@ export function ChatbotRenderer({
                     ) : null}
                 </div>
             </div>
-
-            {aiExtractAvailable && !ready ? (
-                <div className="shrink-0 border-t border-border/60 bg-background/80 backdrop-blur-sm">
-                    <div className="mx-auto max-w-2xl px-4 py-2 lg:px-6">
-                        <div className="overflow-hidden rounded-xl border border-dashed border-border/80 bg-muted/20">
-                            <button
-                                type="button"
-                                onClick={() => setExtractOpen((v) => !v)}
-                                className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-xs text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
-                            >
-                                <span className="flex items-center gap-2 font-medium">
-                                    <Sparkles className="size-3.5 text-violet-600 dark:text-violet-300" />
-                                    Preencher com IA (texto livre)
-                                </span>
-                                {extractOpen ? (
-                                    <ChevronUp className="size-3.5 shrink-0 opacity-60" />
-                                ) : (
-                                    <ChevronDown className="size-3.5 shrink-0 opacity-60" />
-                                )}
-                            </button>
-                            {extractOpen ? (
-                                <div className="space-y-2 border-t border-border/60 px-3 py-2.5">
-                                    <textarea
-                                        value={extractText}
-                                        onChange={(e) => setExtractText(e.target.value)}
-                                        placeholder="Cola aqui texto com vários dados (nome, email, …)"
-                                        rows={3}
-                                        className={cn(
-                                            'w-full rounded-lg border border-input bg-background px-3 py-2 text-xs outline-none',
-                                            'focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50',
-                                        )}
-                                    />
-                                    <Button
-                                        type="button"
-                                        size="sm"
-                                        className="h-8 rounded-lg"
-                                        disabled={extractBusy || !extractText.trim()}
-                                        onClick={() => void runExtract()}
-                                    >
-                                        {extractBusy && <Spinner />}
-                                        Aplicar às respostas
-                                    </Button>
-                                </div>
-                            ) : null}
-                        </div>
-                    </div>
-                </div>
-            ) : null}
         </div>
     );
 }

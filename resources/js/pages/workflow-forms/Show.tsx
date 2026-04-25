@@ -79,7 +79,6 @@ type Props = {
     progress: ProgressPayload;
     preferences: { workflow_form_renderer: 'wizard' | 'chatbot' };
     conversation: { id: number; messages: ChatMessage[] };
-    workflow_form_ai_extract_available: boolean;
     workflow_form_copilot_available: boolean;
 };
 
@@ -734,7 +733,6 @@ function WorkflowFormShowInner({
     progress,
     preferences,
     conversation,
-    workflow_form_ai_extract_available,
     workflow_form_copilot_available,
 }: Props) {
     const { auth } = usePage<SharedData>().props;
@@ -926,9 +924,6 @@ function WorkflowFormShowInner({
                         previous_token={activePreviousToken}
                         prefill={activePrefill}
                         initialMessages={activeConversation.messages}
-                        aiExtractAvailable={
-                            workflow_form_ai_extract_available
-                        }
                         user={auth.user}
                         workflowName={activeProgress?.workflow_name ?? null}
                         onAdvance={handleChatAdvance}

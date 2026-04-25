@@ -40,7 +40,6 @@ final class WorkflowFormController
             'preferences' => [
                 'workflow_form_renderer' => $this->rendererPreference($user),
             ],
-            'workflow_form_ai_extract_available' => app(AiFieldExtractor::class)->isAvailable(),
             'workflow_form_copilot_available' => app(AiCopilotService::class)->isAvailable(),
         ]));
     }
