@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useDefaultLayout } from 'react-resizable-panels';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import type { SharedData } from '@/types/page';
 import {
     ResizableHandle,
@@ -11,6 +12,7 @@ import {
     ResizablePanelGroup,
 } from '@/components/ui/resizable';
 import { Separator } from '@/components/ui/separator';
+import { Drawer, DrawerClose, DrawerContent } from '@/components/ui/drawer';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import AppLayout from '@/layouts/app-layout';
 import { cn } from '@/lib/utils';
@@ -257,17 +259,23 @@ function ProgressPanel({
     run_id,
     formToken,
     copilotAvailable,
+    progressTab,
+    onProgressTabChange,
+    variant = 'sidebar',
 }: {
     progress: ProgressPayload;
     run_id: number;
     formToken: string;
     copilotAvailable: boolean;
+    progressTab: ProgressSideTabId | null;
+    onProgressTabChange: (tab: ProgressSideTabId | null) => void;
+    variant?: 'sidebar' | 'drawer';
 }) {
     const [timelineView, setTimelineView] = useState<'complete' | 'compact'>(
         'complete',
     );
-    const [progressTab, setProgressTab] =
-        useState<ProgressSideTabId>('details');
+    const collapsed = progressTab === null;
+    const inDrawer = variant === 'drawer';
 
     const showTimelineViewToggle = progress.steps.length >= 2;
 
@@ -319,237 +327,115 @@ function ProgressPanel({
     return (
         <aside
             className={cn(
-                'flex h-full min-h-0 w-full min-w-0 shrink-0 flex-col border-t border-border bg-background',
-                'lg:max-w-none lg:flex-row lg:border-t-0 lg:border-l lg:border-border',
+                inDrawer
+                    ? 'flex h-full min-h-0 w-full min-w-0 shrink-0 flex-col bg-background'
+                    : collapsed
+                        ? 'flex h-full min-h-0 min-w-0 shrink-0 flex-col border-t border-border bg-background lg:w-[4.5rem] lg:border-t-0 lg:border-l lg:border-border'
+                        : 'flex h-full min-h-0 w-full min-w-0 shrink-0 flex-col border-t border-border bg-background lg:max-w-none lg:flex-row lg:border-t-0 lg:border-l lg:border-border',
             )}
-            aria-labelledby="workflow-progress-heading"
+            aria-label="Painel de andamento"
         >
-            <div
-                role="tabpanel"
-                id={`progress-tabpanel-${progressTab}`}
-                aria-labelledby={`progress-tab-${progressTab}`}
-                className="scrollbar-discrete flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-y-auto p-4 lg:min-w-0 lg:p-5"
-            >
-                {progressTab === 'details' ? (
-                    <>
-                        <header className="space-y-1">
-                            <p className="font-mono text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
-                                Execução #{run_id}
-                            </p>
-                            <h2
-                                id="workflow-progress-heading"
-                                className="text-lg font-semibold tracking-tight"
-                            >
-                                Andamento
-                            </h2>
-                            <p className="text-sm leading-snug text-muted-foreground">
-                                {progress.workflow_name}
-                            </p>
-                            {progress.workflow_description ? (
-                                <p className="pt-0.5 text-xs leading-relaxed whitespace-pre-wrap text-muted-foreground">
-                                    {progress.workflow_description}
+            {progressTab ? (
+                <div
+                    role="tabpanel"
+                    id={`progress-tabpanel-${progressTab}`}
+                    aria-labelledby={`progress-tab-${progressTab}`}
+                    className="scrollbar-discrete flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-y-auto p-4 lg:min-w-0 lg:p-5"
+                >
+                    {progressTab === 'details' ? (
+                        <>
+                            <header className="space-y-1">
+                                <p className="font-mono text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+                                    Execução #{run_id}
                                 </p>
+                                <h2 className="text-lg font-semibold tracking-tight">
+                                    Andamento
+                                </h2>
+                                <p className="text-sm leading-snug text-muted-foreground">
+                                    {progress.workflow_name}
+                                </p>
+                                {progress.workflow_description ? (
+                                    <p className="pt-0.5 text-xs leading-relaxed whitespace-pre-wrap text-muted-foreground">
+                                        {progress.workflow_description}
+                                    </p>
+                                ) : null}
+                            </header>
+
+                            {showTimelineViewToggle ? (
+                                <ToggleGroup
+                                    type="single"
+                                    value={timelineView}
+                                    onValueChange={(v) => {
+                                        if (v === 'complete' || v === 'compact') {
+                                            setTimelineView(v);
+                                        }
+                                    }}
+                                    variant="outline"
+                                    size="sm"
+                                    className="grid w-full grid-cols-2 gap-0 shadow-none"
+                                >
+                                    <ToggleGroupItem
+                                        value="complete"
+                                        className="text-xs"
+                                    >
+                                        Completo
+                                    </ToggleGroupItem>
+                                    <ToggleGroupItem
+                                        value="compact"
+                                        className="text-xs"
+                                    >
+                                        Compacto
+                                    </ToggleGroupItem>
+                                </ToggleGroup>
                             ) : null}
-                        </header>
 
-                        {showTimelineViewToggle ? (
-                            <ToggleGroup
-                                type="single"
-                                value={timelineView}
-                                onValueChange={(v) => {
-                                    if (v === 'complete' || v === 'compact') {
-                                        setTimelineView(v);
-                                    }
-                                }}
-                                variant="outline"
-                                size="sm"
-                                className="grid w-full grid-cols-2 gap-0 shadow-none"
-                            >
-                                <ToggleGroupItem
-                                    value="complete"
-                                    className="text-xs"
-                                >
-                                    Completo
-                                </ToggleGroupItem>
-                                <ToggleGroupItem
-                                    value="compact"
-                                    className="text-xs"
-                                >
-                                    Compacto
-                                </ToggleGroupItem>
-                            </ToggleGroup>
-                        ) : null}
+                            <Separator />
 
-                        <Separator />
-
-                        <div className="flex flex-col pb-2" role="list">
-                            {timelineRows.map((row, rowIdx) => {
-                                if (row.type === 'heading') {
-                                    return (
-                                        <div
-                                            key={row.reactKey}
-                                            className={cn(
-                                                'pb-2 text-xs font-medium tracking-wide text-muted-foreground',
-                                                rowIdx > 0 && 'pt-8',
-                                            )}
-                                        >
-                                            {row.title}
-                                        </div>
-                                    );
-                                }
-
-                                const s = row.step;
-                                const b = stateBadge(s.state);
-                                const stepIndexAmongSteps =
-                                    stepOnlyRows.findIndex(
-                                        (r) => r.step.node_id === s.node_id,
-                                    );
-                                const isLastStep =
-                                    stepIndexAmongSteps >= 0 &&
-                                    stepIndexAmongSteps ===
-                                        stepOnlyRows.length - 1;
-
-                                if (timelineView === 'compact') {
-                                    return (
-                                        <div
-                                            key={row.reactKey}
-                                            role="listitem"
-                                            className={cn(
-                                                'flex min-w-0 items-center gap-3 py-2',
-                                                !isLastStep &&
-                                                    'border-b border-border/60',
-                                            )}
-                                        >
-                                            <span className="w-[9.25rem] shrink-0 font-mono text-[11px] leading-tight tabular-nums text-muted-foreground">
-                                                {formatCompactStepTimestamp(
-                                                    s.state,
-                                                    s.completed_at,
-                                                )}
-                                            </span>
-                                            <p className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
-                                                {s.label}
-                                            </p>
-                                            <Badge
-                                                variant={b.variant}
+                            <div className="flex flex-col pb-2" role="list">
+                                {timelineRows.map((row, rowIdx) => {
+                                    if (row.type === 'heading') {
+                                        return (
+                                            <div
+                                                key={row.reactKey}
                                                 className={cn(
-                                                    'shrink-0 rounded-full px-2.5 py-0 text-[10px] font-medium uppercase',
-                                                    s.state === 'completed' &&
-                                                        'border-emerald-500/40 bg-emerald-500/12 text-emerald-900 dark:border-emerald-400/35 dark:bg-emerald-500/15 dark:text-emerald-100',
-                                                    s.state === 'pending' &&
-                                                        'border-amber-200/80 bg-amber-50 text-amber-950 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-100',
+                                                    'pb-2 text-xs font-medium tracking-wide text-muted-foreground',
+                                                    rowIdx > 0 && 'pt-8',
                                                 )}
                                             >
-                                                {b.label}
-                                            </Badge>
-                                        </div>
-                                    );
-                                }
+                                                {row.title}
+                                            </div>
+                                        );
+                                    }
 
-                                const stepNo = String(
-                                    row.displayIndex,
-                                ).padStart(2, '0');
-                                const totalShown = String(
-                                    displayedSteps.length,
-                                ).padStart(2, '0');
+                                    const s = row.step;
+                                    const b = stateBadge(s.state);
+                                    const stepIndexAmongSteps =
+                                        stepOnlyRows.findIndex(
+                                            (r) => r.step.node_id === s.node_id,
+                                        );
+                                    const isLastStep =
+                                        stepIndexAmongSteps >= 0 &&
+                                        stepIndexAmongSteps ===
+                                            stepOnlyRows.length - 1;
 
-                                return (
-                                    <div
-                                        key={row.reactKey}
-                                        className="flex items-stretch gap-0"
-                                        role="listitem"
-                                    >
-                                        <div className="w-[4.5rem] shrink-0 pt-0.5 text-right font-mono text-muted-foreground tabular-nums">
-                                            {s.state === 'completed' &&
-                                            s.completed_at ? (
-                                                <>
-                                                    <p className="text-base leading-none font-semibold tracking-tight text-foreground">
-                                                        {formatTimeOnly(
-                                                            s.completed_at,
-                                                        )}
-                                                    </p>
-                                                    <p className="mt-1 text-xs leading-none opacity-80">
-                                                        {formatShortDate(
-                                                            s.completed_at,
-                                                        )}
-                                                    </p>
-                                                    <p className="mt-2 flex items-center justify-end gap-1 text-[10px] leading-none opacity-80">
-                                                        <Clock
-                                                            className="size-3 shrink-0 opacity-70"
-                                                            aria-hidden
-                                                        />
-                                                        <span>
-                                                            Etapa {stepNo}/
-                                                            {totalShown}
-                                                        </span>
-                                                    </p>
-                                                </>
-                                            ) : null}
-                                            {s.state === 'current' ? (
-                                                <>
-                                                    <p className="text-base leading-none font-semibold text-foreground">
-                                                        •
-                                                    </p>
-                                                    <p className="mt-1 text-xs leading-none opacity-80">
-                                                        Agora
-                                                    </p>
-                                                    <p className="mt-2 flex items-center justify-end gap-1 text-[10px] leading-none opacity-80">
-                                                        <Clock
-                                                            className="size-3 shrink-0 opacity-70"
-                                                            aria-hidden
-                                                        />
-                                                        <span>
-                                                            Etapa {stepNo}/
-                                                            {totalShown}
-                                                        </span>
-                                                    </p>
-                                                </>
-                                            ) : null}
-                                            {s.state === 'pending' ? (
-                                                <>
-                                                    <p className="text-base leading-none font-semibold tracking-tight text-foreground opacity-35">
-                                                        —
-                                                    </p>
-                                                    <p className="mt-1 text-xs leading-none opacity-70">
-                                                        A seguir
-                                                    </p>
-                                                    <p className="mt-2 flex items-center justify-end gap-1 text-[10px] leading-none opacity-80">
-                                                        <Clock
-                                                            className="size-3 shrink-0 opacity-70"
-                                                            aria-hidden
-                                                        />
-                                                        <span>
-                                                            Etapa {stepNo}/
-                                                            {totalShown}
-                                                        </span>
-                                                    </p>
-                                                </>
-                                            ) : null}
-                                        </div>
-
-                                        <div className="relative flex w-6 shrink-0 flex-col items-center self-stretch pt-1">
-                                            {!isLastStep ? (
-                                                <div
-                                                    className="absolute top-[13px] bottom-0 left-1/2 w-px -translate-x-1/2 bg-border"
-                                                    aria-hidden
-                                                />
-                                            ) : null}
-                                            <span
+                                    if (timelineView === 'compact') {
+                                        return (
+                                            <div
+                                                key={row.reactKey}
+                                                role="listitem"
                                                 className={cn(
-                                                    'relative z-[1] size-2.5 shrink-0 rounded-full border-2 border-background',
-                                                    stepStatusDotClass(s.state),
+                                                    'flex min-w-0 items-center gap-3 py-2',
+                                                    !isLastStep &&
+                                                        'border-b border-border/60',
                                                 )}
-                                                title={b.label}
-                                            />
-                                        </div>
-
-                                        <div
-                                            className={cn(
-                                                'min-w-0 flex-1 space-y-2',
-                                                !isLastStep && 'pb-10',
-                                            )}
-                                        >
-                                            <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1">
-                                                <p className="leading-snug font-semibold text-foreground">
+                                            >
+                                                <span className="w-[9.25rem] shrink-0 font-mono text-[11px] leading-tight tabular-nums text-muted-foreground">
+                                                    {formatCompactStepTimestamp(
+                                                        s.state,
+                                                        s.completed_at,
+                                                    )}
+                                                </span>
+                                                <p className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
                                                     {s.label}
                                                 </p>
                                                 <Badge
@@ -566,102 +452,240 @@ function ProgressPanel({
                                                     {b.label}
                                                 </Badge>
                                             </div>
+                                        );
+                                    }
 
-                                            {(() => {
-                                                const primary =
-                                                    stepPrimaryDescription(s);
-                                                const hint =
-                                                    stepSecondaryHint(s);
-                                                if (!primary && !hint) {
-                                                    return null;
-                                                }
+                                    const stepNo = String(
+                                        row.displayIndex,
+                                    ).padStart(2, '0');
+                                    const totalShown = String(
+                                        displayedSteps.length,
+                                    ).padStart(2, '0');
 
-                                                return (
-                                                    <div className="text-xs leading-relaxed text-muted-foreground">
-                                                        <p className="flex items-start gap-1.5">
-                                                            <ScrollText
-                                                                className="mt-0.5 size-3.5 shrink-0 text-muted-foreground/70"
+                                    return (
+                                        <div
+                                            key={row.reactKey}
+                                            className="flex items-stretch gap-0"
+                                            role="listitem"
+                                        >
+                                            <div className="w-[4.5rem] shrink-0 pt-0.5 text-right font-mono text-muted-foreground tabular-nums">
+                                                {s.state === 'completed' &&
+                                                s.completed_at ? (
+                                                    <>
+                                                        <p className="text-base leading-none font-semibold tracking-tight text-foreground">
+                                                            {formatTimeOnly(
+                                                                s.completed_at,
+                                                            )}
+                                                        </p>
+                                                        <p className="mt-1 text-xs leading-none opacity-80">
+                                                            {formatShortDate(
+                                                                s.completed_at,
+                                                            )}
+                                                        </p>
+                                                        <p className="mt-2 flex items-center justify-end gap-1 text-[10px] leading-none opacity-80">
+                                                            <Clock
+                                                                className="size-3 shrink-0 opacity-70"
                                                                 aria-hidden
                                                             />
-                                                            <span className="min-w-0 space-y-2">
-                                                                {primary ? (
-                                                                    <span className="block whitespace-pre-wrap">
-                                                                        {
-                                                                            primary
-                                                                        }
-                                                                    </span>
-                                                                ) : null}
-                                                                {hint ? (
-                                                                    <span className="block whitespace-pre-wrap">
-                                                                        {hint}
-                                                                    </span>
-                                                                ) : null}
+                                                            <span>
+                                                                Etapa {stepNo}/
+                                                                {totalShown}
                                                             </span>
                                                         </p>
-                                                    </div>
-                                                );
-                                            })()}
-
-                                            {s.summary_lines.length > 0 ? (
-                                                <ul className="space-y-1 text-xs leading-relaxed text-muted-foreground">
-                                                    {s.summary_lines.map(
-                                                        (line, li) => (
-                                                            <li key={li}>
-                                                                {line}
-                                                            </li>
-                                                        ),
-                                                    )}
-                                                </ul>
-                                            ) : null}
-
-                                            <div className="flex min-w-0 items-center gap-2.5 pt-2">
-                                                <Avatar className="size-7 shrink-0 border-0 shadow-none">
-                                                    <AvatarFallback className="bg-muted/50 text-[10px] font-semibold text-muted-foreground">
-                                                        {initialsFromLabel(
-                                                            s.actor_name?.trim() ||
-                                                                s.label,
-                                                        )}
-                                                    </AvatarFallback>
-                                                </Avatar>
-                                                {s.actor_name?.trim() ? (
-                                                    <div className="min-w-0 flex-1">
-                                                        <p className="truncate text-[10px] leading-none font-normal text-muted-foreground">
-                                                            {s.actor_name.trim()}
+                                                    </>
+                                                ) : null}
+                                                {s.state === 'current' ? (
+                                                    <>
+                                                        <p className="text-base leading-none font-semibold text-foreground">
+                                                            •
                                                         </p>
-                                                    </div>
+                                                        <p className="mt-1 text-xs leading-none opacity-80">
+                                                            Agora
+                                                        </p>
+                                                        <p className="mt-2 flex items-center justify-end gap-1 text-[10px] leading-none opacity-80">
+                                                            <Clock
+                                                                className="size-3 shrink-0 opacity-70"
+                                                                aria-hidden
+                                                            />
+                                                            <span>
+                                                                Etapa {stepNo}/
+                                                                {totalShown}
+                                                            </span>
+                                                        </p>
+                                                    </>
+                                                ) : null}
+                                                {s.state === 'pending' ? (
+                                                    <>
+                                                        <p className="text-base leading-none font-semibold tracking-tight text-foreground opacity-35">
+                                                            —
+                                                        </p>
+                                                        <p className="mt-1 text-xs leading-none opacity-70">
+                                                            A seguir
+                                                        </p>
+                                                        <p className="mt-2 flex items-center justify-end gap-1 text-[10px] leading-none opacity-80">
+                                                            <Clock
+                                                                className="size-3 shrink-0 opacity-70"
+                                                                aria-hidden
+                                                            />
+                                                            <span>
+                                                                Etapa {stepNo}/
+                                                                {totalShown}
+                                                            </span>
+                                                        </p>
+                                                    </>
                                                 ) : null}
                                             </div>
+
+                                            <div className="relative flex w-6 shrink-0 flex-col items-center self-stretch pt-1">
+                                                {!isLastStep ? (
+                                                    <div
+                                                        className="absolute top-[13px] bottom-0 left-1/2 w-px -translate-x-1/2 bg-border"
+                                                        aria-hidden
+                                                    />
+                                                ) : null}
+                                                <span
+                                                    className={cn(
+                                                        'relative z-[1] size-2.5 shrink-0 rounded-full border-2 border-background',
+                                                        stepStatusDotClass(
+                                                            s.state,
+                                                        ),
+                                                    )}
+                                                    title={b.label}
+                                                />
+                                            </div>
+
+                                            <div
+                                                className={cn(
+                                                    'min-w-0 flex-1 space-y-2',
+                                                    !isLastStep && 'pb-10',
+                                                )}
+                                            >
+                                                <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1">
+                                                    <p className="leading-snug font-semibold text-foreground">
+                                                        {s.label}
+                                                    </p>
+                                                    <Badge
+                                                        variant={b.variant}
+                                                        className={cn(
+                                                            'shrink-0 rounded-full px-2.5 py-0 text-[10px] font-medium uppercase',
+                                                            s.state ===
+                                                                'completed' &&
+                                                                'border-emerald-500/40 bg-emerald-500/12 text-emerald-900 dark:border-emerald-400/35 dark:bg-emerald-500/15 dark:text-emerald-100',
+                                                            s.state ===
+                                                                'pending' &&
+                                                                'border-amber-200/80 bg-amber-50 text-amber-950 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-100',
+                                                        )}
+                                                    >
+                                                        {b.label}
+                                                    </Badge>
+                                                </div>
+
+                                                {(() => {
+                                                    const primary =
+                                                        stepPrimaryDescription(
+                                                            s,
+                                                        );
+                                                    const hint =
+                                                        stepSecondaryHint(s);
+                                                    if (!primary && !hint) {
+                                                        return null;
+                                                    }
+
+                                                    return (
+                                                        <div className="text-xs leading-relaxed text-muted-foreground">
+                                                            <p className="flex items-start gap-1.5">
+                                                                <ScrollText
+                                                                    className="mt-0.5 size-3.5 shrink-0 text-muted-foreground/70"
+                                                                    aria-hidden
+                                                                />
+                                                                <span className="min-w-0 space-y-2">
+                                                                    {primary ? (
+                                                                        <span className="block whitespace-pre-wrap">
+                                                                            {
+                                                                                primary
+                                                                            }
+                                                                        </span>
+                                                                    ) : null}
+                                                                    {hint ? (
+                                                                        <span className="block whitespace-pre-wrap">
+                                                                            {hint}
+                                                                        </span>
+                                                                    ) : null}
+                                                                </span>
+                                                            </p>
+                                                        </div>
+                                                    );
+                                                })()}
+
+                                                {s.summary_lines.length > 0 ? (
+                                                    <ul className="space-y-1 text-xs leading-relaxed text-muted-foreground">
+                                                        {s.summary_lines.map(
+                                                            (line, li) => (
+                                                                <li key={li}>
+                                                                    {line}
+                                                                </li>
+                                                            ),
+                                                        )}
+                                                    </ul>
+                                                ) : null}
+
+                                                <div className="flex min-w-0 items-center gap-2.5 pt-2">
+                                                    <Avatar className="size-7 shrink-0 border-0 shadow-none">
+                                                        <AvatarFallback className="bg-muted/50 text-[10px] font-semibold text-muted-foreground">
+                                                            {initialsFromLabel(
+                                                                s.actor_name?.trim() ||
+                                                                    s.label,
+                                                            )}
+                                                        </AvatarFallback>
+                                                    </Avatar>
+                                                    {s.actor_name?.trim() ? (
+                                                        <div className="min-w-0 flex-1">
+                                                            <p className="truncate text-[10px] leading-none font-normal text-muted-foreground">
+                                                                {s.actor_name.trim()}
+                                                            </p>
+                                                        </div>
+                                                    ) : null}
+                                                </div>
+                                            </div>
                                         </div>
-                                    </div>
-                                );
-                            })}
+                                    );
+                                })}
+                            </div>
+                        </>
+                    ) : null}
+                    {progressTab === 'activities' ? (
+                        <div className="flex flex-1 flex-col items-center justify-center gap-3 px-2 py-12 text-center text-muted-foreground">
+                            <MessageSquare
+                                className="size-10 text-muted-foreground/35"
+                                strokeWidth={1.25}
+                                aria-hidden
+                            />
+                            <p className="text-sm leading-relaxed">
+                                Atividades do processo estarão disponíveis em breve.
+                            </p>
                         </div>
-                    </>
-                ) : null}
-                {progressTab === 'activities' ? (
-                    <div className="flex flex-1 flex-col items-center justify-center gap-3 px-2 py-12 text-center text-muted-foreground">
-                        <MessageSquare
-                            className="size-10 text-muted-foreground/35"
-                            strokeWidth={1.25}
-                            aria-hidden
+                    ) : null}
+                    {progressTab === 'copilot' ? (
+                        <AiCopilotTab
+                            token={formToken}
+                            available={copilotAvailable}
                         />
-                        <p className="text-sm leading-relaxed">
-                            Atividades do processo estarão disponíveis em breve.
-                        </p>
-                    </div>
-                ) : null}
-                {progressTab === 'copilot' ? (
-                    <AiCopilotTab
-                        token={formToken}
-                        available={copilotAvailable}
-                    />
-                ) : null}
-            </div>
+                    ) : null}
+                </div>
+            ) : null}
 
             <nav
                 role="tablist"
                 aria-label="Secções do painel de andamento"
-                className="flex shrink-0 flex-row items-stretch justify-around gap-0.5 border-t border-border bg-background px-1.5 py-2 lg:w-[4.5rem] lg:flex-col lg:justify-start lg:gap-1 lg:border-t-0 lg:border-l lg:px-2 lg:py-3"
+                className={cn(
+                    'flex shrink-0 flex-row items-stretch justify-around gap-0.5 border-t border-border bg-background px-1.5 py-2',
+                    'lg:w-[4.5rem] lg:flex-col lg:justify-start lg:gap-1 lg:px-2 lg:py-3',
+                    inDrawer
+                        ? 'lg:border-0'
+                        : collapsed
+                            ? 'lg:border-l-0 lg:border-t-0'
+                            : 'lg:border-t-0 lg:border-l',
+                )}
             >
                 {PROGRESS_SIDE_TABS.map((tab) => {
                     const TabIcon = tab.icon;
@@ -677,7 +701,7 @@ function ProgressPanel({
                             aria-controls={`progress-tabpanel-${tab.id}`}
                             tabIndex={selected ? 0 : -1}
                             onClick={() => {
-                                setProgressTab(tab.id);
+                                onProgressTabChange(selected ? null : tab.id);
                             }}
                             className={cn(
                                 'flex flex-1 flex-col items-center gap-1 rounded-lg px-1 py-2 text-[10px] font-medium transition-colors lg:flex-none lg:px-0.5 lg:py-2',
@@ -780,30 +804,16 @@ function WorkflowFormShowInner({
         setRenderer(preferences.workflow_form_renderer);
     }, [preferences.workflow_form_renderer, activeToken]);
 
-    const [lgUp, setLgUp] = useState(
-        () =>
-            typeof window !== 'undefined' &&
-            window.matchMedia('(min-width: 1024px)').matches,
-    );
-
-    useEffect(() => {
-        const mq = window.matchMedia('(min-width: 1024px)');
-        const fn = () => {
-            setLgUp(mq.matches);
-        };
-        fn();
-        mq.addEventListener('change', fn);
-
-        return () => {
-            mq.removeEventListener('change', fn);
-        };
-    }, []);
-
     const layoutPersistence = useDefaultLayout({
         id: 'workflow-form-resize',
         panelIds: ['workflow-form', 'workflow-progress'],
         storage: ssrSafeLocalStorage,
     });
+
+    const [progressTab, setProgressTab] = useState<ProgressSideTabId | null>(
+        'details',
+    );
+    const [progressSheetOpen, setProgressSheetOpen] = useState(false);
 
     const handleChatDraftUpdate = useCallback(
         (payload: { messages: ChatMessage[]; draftValues: Record<string, unknown> }) => {
@@ -944,6 +954,13 @@ function WorkflowFormShowInner({
             run_id={activeRunId}
             formToken={activeToken}
             copilotAvailable={workflow_form_copilot_available}
+            progressTab={progressTab}
+            onProgressTabChange={(tab) => {
+                setProgressTab(tab);
+                if (tab === null) {
+                    setProgressSheetOpen(false);
+                }
+            }}
         />
     );
 
@@ -957,40 +974,111 @@ function WorkflowFormShowInner({
               com histórico em `activeConversation`.
             */}
             <div className="flex min-h-0 flex-1 flex-col lg:max-h-[calc(100svh-4rem-var(--impersonation-banner-offset,0px))] lg:min-h-0">
-                {lgUp ? (
-                    <ResizablePanelGroup
-                        orientation="horizontal"
-                        className="flex min-h-0 flex-1"
-                        defaultLayout={layoutPersistence.defaultLayout}
-                        onLayoutChanged={layoutPersistence.onLayoutChanged}
-                    >
-                        <ResizablePanel
-                            id="workflow-form"
-                            className="flex min-h-0 min-w-0"
-                            minSize="24%"
+                <div className="hidden min-h-0 flex-1 lg:flex">
+                    {progressTab ? (
+                        <ResizablePanelGroup
+                            orientation="horizontal"
+                            className="flex min-h-0 flex-1"
+                            defaultLayout={layoutPersistence.defaultLayout}
+                            onLayoutChanged={layoutPersistence.onLayoutChanged}
                         >
+                            <ResizablePanel
+                                id="workflow-form"
+                                className="flex min-h-0 min-w-0"
+                                minSize="24%"
+                            >
+                                {primaryColumn}
+                            </ResizablePanel>
+                            <ResizableHandle
+                                withHandle
+                                className="bg-border/60"
+                                aria-label="Redimensionar painel de andamento"
+                            />
+                            <ResizablePanel
+                                id="workflow-progress"
+                                className="flex min-h-0 min-w-0"
+                                minSize={`${MIN_PROGRESS_PANEL_PX}px`}
+                                maxSize={`${MAX_PROGRESS_PANEL_PX}px`}
+                            >
+                                {progressPanel}
+                            </ResizablePanel>
+                        </ResizablePanelGroup>
+                    ) : (
+                        <div className="flex min-h-0 flex-1">
                             {primaryColumn}
-                        </ResizablePanel>
-                        <ResizableHandle
-                            withHandle
-                            className="bg-border/60"
-                            aria-label="Redimensionar painel de andamento"
-                        />
-                        <ResizablePanel
-                            id="workflow-progress"
-                            className="flex min-h-0 min-w-0"
-                            minSize={`${MIN_PROGRESS_PANEL_PX}px`}
-                            maxSize={`${MAX_PROGRESS_PANEL_PX}px`}
-                        >
                             {progressPanel}
-                        </ResizablePanel>
-                    </ResizablePanelGroup>
-                ) : (
-                    <div className="flex min-h-0 flex-1 flex-col">
-                        {primaryColumn}
-                        {progressPanel}
-                    </div>
-                )}
+                        </div>
+                    )}
+                </div>
+
+                <div className="flex min-h-0 flex-1 flex-col lg:hidden">
+                    {primaryColumn}
+                    <Drawer
+                        open={progressSheetOpen}
+                        onOpenChange={(open) => {
+                            setProgressSheetOpen(open);
+                            if (open && progressTab === null) {
+                                setProgressTab('details');
+                            }
+                        }}
+                        dismissible
+                        snapPoints={[0.35, 0.85]}
+                        activeSnapPoint={0.85}
+                    >
+                        <div className="pointer-events-none fixed right-4 bottom-4 z-40 flex items-center gap-2">
+                            <Button
+                                type="button"
+                                variant="secondary"
+                                className="pointer-events-auto gap-2 rounded-full shadow-lg"
+                                onClick={() => {
+                                    setProgressSheetOpen(true);
+                                    if (progressTab === null) {
+                                        setProgressTab('details');
+                                    }
+                                }}
+                            >
+                                <ListTree className="size-4" aria-hidden />
+                                Andamento
+                            </Button>
+                        </div>
+                        <DrawerContent className="h-[85svh] p-0">
+                            <div className="flex h-full min-h-0 flex-col">
+                                <div className="relative shrink-0">
+                                    <div className="mx-auto mt-3 h-1.5 w-16 rounded-full bg-muted-foreground/25" />
+                                    <DrawerClose asChild>
+                                        <button
+                                            type="button"
+                                            className="absolute top-3 right-3 inline-flex size-9 items-center justify-center rounded-md text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+                                            aria-label="Fechar"
+                                        >
+                                            <span className="text-xl leading-none">
+                                                ×
+                                            </span>
+                                        </button>
+                                    </DrawerClose>
+                                </div>
+                                <div className="min-h-0 flex-1">
+                                    <ProgressPanel
+                                        progress={activeProgress}
+                                        run_id={activeRunId}
+                                        formToken={activeToken}
+                                        copilotAvailable={
+                                            workflow_form_copilot_available
+                                        }
+                                        progressTab={progressTab}
+                                        onProgressTabChange={(tab) => {
+                                            setProgressTab(tab);
+                                            if (tab === null) {
+                                                setProgressSheetOpen(false);
+                                            }
+                                        }}
+                                        variant="drawer"
+                                    />
+                                </div>
+                            </div>
+                        </DrawerContent>
+                    </Drawer>
+                </div>
             </div>
         </AppLayout>
     );
